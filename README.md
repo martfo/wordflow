@@ -58,7 +58,7 @@ The latency and accuracy tests run against the user's own voice. Generate the
 fixtures once:
 
 ```sh
-uv run --with sounddevice python backend/scripts/record_fixtures.py
+uv run --with sounddevice --with numpy python backend/scripts/record_fixtures.py
 ```
 
 ## Coexistence with Polenta
