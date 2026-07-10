@@ -3,7 +3,7 @@
 The accent under test is the user's own, so these must be recorded by them.
 Run from the repo root:
 
-    uv run --with sounddevice python backend/scripts/record_fixtures.py
+    uv run --with sounddevice --with numpy python backend/scripts/record_fixtures.py
 
 It records at the microphone's native rate and resamples to 16 kHz mono, so it
 works on any Mac input device, and writes the WAVs into fixtures/audio/: the
@@ -115,10 +115,11 @@ def _write_16k(path: Path, samples) -> None:
 
 def main() -> None:
     try:
+        import numpy  # noqa: F401
         import sounddevice  # noqa: F401
     except ImportError:
-        say("sounddevice is needed. Run with:")
-        say("  uv run --with sounddevice python backend/scripts/record_fixtures.py")
+        say("sounddevice and numpy are both needed. Run with:")
+        say("  uv run --with sounddevice --with numpy python backend/scripts/record_fixtures.py")
         sys.exit(1)
 
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
