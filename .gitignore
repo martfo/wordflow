@@ -1,0 +1,13 @@
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+backend/.venv/
+app/.build/
+dist/
+build/
+*.dmg
+.uv-cache/
+# Recorded voice fixtures are the user's; they are generated locally and not committed.
+fixtures/audio/*.wav
