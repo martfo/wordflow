@@ -17,7 +17,7 @@ struct SettingsView: View {
             MicrophoneSettings()
                 .tabItem { Label("Microphone", systemImage: "mic") }
                 .tag(AppModel.SettingsTab.microphone)
-            ModelSettings()
+            ModelSettingsView()
                 .tabItem { Label("Model", systemImage: "waveform") }
                 .tag(AppModel.SettingsTab.model)
             CleanupSettings()
@@ -94,25 +94,6 @@ private struct MeterBar: View {
             }
         }
         .frame(height: 8)
-    }
-}
-
-private struct ModelSettings: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        Form {
-            Picker("Speech model", selection: Binding(
-                get: { model.activeModel },
-                set: { model.switchModel($0) })) {
-                Text("Parakeet TDT 0.6B (primary)").tag("parakeet")
-                Text("Whisper large-v3-turbo").tag("whisper")
-            }
-            Text("The previous model keeps working until the new one has loaded, so no dictation is lost.")
-                .font(.footnote).foregroundStyle(.secondary)
-            Text("The first-run bake-off and the accuracy harness will live here.")
-                .font(.footnote).foregroundStyle(.secondary)
-        }
     }
 }
 
