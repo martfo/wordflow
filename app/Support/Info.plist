@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>WordFlow</string>
+	<key>CFBundleDisplayName</key>
+	<string>WordFlow</string>
+	<key>CFBundleIdentifier</key>
+	<string>co.uk.designturbine.wordflow</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleExecutable</key>
+	<string>WordFlowApp</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.4</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>WordFlow records your microphone only while you hold the dictation key, so your speech can be turned into text on this Mac. Nothing leaves the machine.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>
