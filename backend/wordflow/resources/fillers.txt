@@ -1,0 +1,10 @@
+# WordFlow default filler list. One filler per line; lines starting with # are
+# comments. This list is copied into data/fillers.txt on first run and is
+# editable from Settings. Kept deliberately conservative so real words are
+# never stripped. "you know" is removed only as a standalone interjection.
+um
+uh
+er
+erm
+uhm
+you know

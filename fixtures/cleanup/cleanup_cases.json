@@ -1,0 +1,19 @@
+{
+  "filler": [
+    {"raw": "the plan is um basically uh ready", "expected": "The plan is basically ready"},
+    {"raw": "it is, you know, quite fast", "expected": "It is, quite fast"}
+  ],
+  "american": [
+    {"raw": "the color of the center", "expected": "The colour of the centre"},
+    {"raw": "we organize and analyze the data", "expected": "We organise and analyse the data"}
+  ],
+  "emdash": [
+    {"raw": "wait — no, go on", "expected": "Wait, no, go on"}
+  ],
+  "order_trap": {
+    "raw": "book the center parcs lodge",
+    "dictionary": [{"canonical": "Center Parcs", "hints": []}],
+    "expected": "Book the Center Parcs lodge",
+    "note": "Dictionary runs before the British pass and protects its output, so 'Center' is not rewritten to 'Centre' (AC-3.5-a, AC-3.5-b)."
+  }
+}
