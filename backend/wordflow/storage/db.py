@@ -40,6 +40,18 @@ MIGRATIONS: list[str] = [
         value TEXT NOT NULL
     );
     """,
+    # 2: accuracy-harness runs, stored so word-error-rate runs stay comparable
+    # over time (AC-9.5).
+    """
+    CREATE TABLE accuracy_runs(
+        id INTEGER PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        model TEXT NOT NULL,
+        wer REAL NOT NULL,
+        reference_words INTEGER NOT NULL,
+        transcript TEXT NOT NULL
+    );
+    """,
 ]
 
 

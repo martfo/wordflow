@@ -69,6 +69,24 @@ class ModelManager:
             assert self._engine is not None
             return self._engine.transcribe(samples, sample_rate)
 
+    def transcribe_on(self, name: str, samples: np.ndarray, sample_rate: int) -> str:
+        """Transcribe with a specific model without disturbing the resident
+        active one. The active model uses the resident engine; any other is
+        loaded transiently and unloaded again, so the bake-off can score both
+        models without a permanent second model in memory."""
+        with self._lock:
+            if name == self._active_name:
+                self._ensure_loaded()
+                self._last_used = self._clock()
+                assert self._engine is not None
+                return self._engine.transcribe(samples, sample_rate)
+        engine = self._make(name)
+        engine.load()
+        try:
+            return engine.transcribe(samples, sample_rate)
+        finally:
+            engine.unload()
+
     def switch(self, name: str, *, background: bool = True) -> None:
         """Switch the active model. The previous model keeps serving until the
         new one has loaded; only then does the active engine swap."""

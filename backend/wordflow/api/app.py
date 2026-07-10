@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from wordflow.accuracy import harness
 from wordflow.api.service import cleanup_toggles, run_dictation
+from wordflow.asr.audio import decode_wav_base64
 from wordflow.asr.manager import ModelManager
 from wordflow.cleanup.pipeline import Pipeline
 from wordflow.config import Config
@@ -66,6 +68,17 @@ class FillersRequest(BaseModel):
 
 class ModelRequest(BaseModel):
     name: str
+
+
+class BakeoffRequest(BaseModel):
+    audio_base64: str
+    sample_rate: int = 16_000
+
+
+class AccuracyRequest(BaseModel):
+    audio_base64: str
+    reference_text: str
+    sample_rate: int = 16_000
 
 
 def create_app(state: AppState) -> FastAPI:
@@ -217,5 +230,28 @@ def create_app(state: AppState) -> FastAPI:
         settings_store.put(conn, "active_model", request.name)
         state.manager.switch(request.name)
         return {"switching_to": request.name}
+
+    # --- Bake-off and accuracy harness (AC-9.3, AC-9.5) ---
+
+    @app.post("/bakeoff")
+    def bakeoff(request: BakeoffRequest) -> dict:
+        samples, rate = decode_wav_base64(request.audio_base64)
+        results = harness.run_bakeoff(state.manager, samples, rate)
+        return {"results": [
+            {"model": r.model, "text": r.text, "error": r.error} for r in results
+        ]}
+
+    @app.post("/accuracy")
+    def accuracy(request: AccuracyRequest) -> dict:
+        samples, rate = decode_wav_base64(request.audio_base64)
+        scores = harness.run_accuracy(conn, state.manager, request.reference_text, samples, rate)
+        return {"scores": [
+            {"model": s.model, "wer": s.wer, "reference_words": s.reference_words,
+             "transcript": s.transcript, "error": s.error} for s in scores
+        ]}
+
+    @app.get("/accuracy")
+    def accuracy_runs() -> list[dict]:
+        return harness.list_runs(conn)
 
     return app

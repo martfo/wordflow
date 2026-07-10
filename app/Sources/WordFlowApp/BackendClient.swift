@@ -121,6 +121,28 @@ final class BackendClient: @unchecked Sendable {
         _ = try await sendVoid("POST", "/model", body: Payload(name: name))
     }
 
+    struct BakeoffResult: Codable, Identifiable { var id: String { model }; let model: String; let text: String; let error: String? }
+    struct AccuracyScore: Codable, Identifiable { var id: String { model }; let model: String; let wer: Double; let reference_words: Int; let transcript: String; let error: String? }
+    struct AccuracyRun: Codable, Identifiable { let id: Int; let created_at: String; let model: String; let wer: Double; let reference_words: Int }
+
+    func bakeoff(audioBase64: String, sampleRate: Int) async throws -> [BakeoffResult] {
+        struct Payload: Encodable { let audio_base64: String; let sample_rate: Int }
+        struct Response: Codable { let results: [BakeoffResult] }
+        let response: Response = try await send("POST", "/bakeoff", body: Payload(audio_base64: audioBase64, sample_rate: sampleRate))
+        return response.results
+    }
+
+    func accuracy(audioBase64: String, referenceText: String, sampleRate: Int) async throws -> [AccuracyScore] {
+        struct Payload: Encodable { let audio_base64: String; let reference_text: String; let sample_rate: Int }
+        struct Response: Codable { let scores: [AccuracyScore] }
+        let response: Response = try await send("POST", "/accuracy", body: Payload(audio_base64: audioBase64, reference_text: referenceText, sample_rate: sampleRate))
+        return response.scores
+    }
+
+    func accuracyRuns() async throws -> [AccuracyRun] {
+        try await get("/accuracy")
+    }
+
     func cleanupToggles() async throws -> [String: Bool] {
         try await get("/cleanup")
     }
