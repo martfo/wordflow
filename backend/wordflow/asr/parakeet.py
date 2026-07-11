@@ -32,9 +32,22 @@ class ParakeetEngine:
         if self._model is None:
             self.load()
         import mlx.core as mx
+        from parakeet_mlx.audio import get_logmel
 
-        audio = mx.array(np.ascontiguousarray(samples, dtype=np.float32))
-        result = self._model.transcribe(audio)
+        # parakeet-mlx's own transcribe() loads audio by shelling out to ffmpeg,
+        # which the PRD forbids (AC-12.2). We already have decoded 16 kHz mono
+        # PCM, so we feed the model's front end directly: the same get_logmel ->
+        # generate path transcribe() uses, minus the file load. get_logmel's
+        # byte-view trick needs float32 input.
+        target_rate = self._model.preprocessor_config.sample_rate
+        audio = np.ascontiguousarray(samples, dtype=np.float32)
+        if sample_rate != target_rate and audio.size:
+            positions = np.linspace(0, len(audio) - 1, int(round(len(audio) * target_rate / sample_rate)))
+            audio = np.interp(positions, np.arange(len(audio)), audio).astype(np.float32)
+        if audio.size == 0:
+            return ""
+        mel = get_logmel(mx.array(audio), self._model.preprocessor_config)
+        result = self._model.generate(mel)[0]
         return (getattr(result, "text", "") or "").strip()
 
     def unload(self) -> None:
