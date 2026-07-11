@@ -1,9 +1,20 @@
 # One entry point for the fast gate. It runs the backend unit tests and the
 # Swift Testing suite and is the single meaning of green.
 
-.PHONY: gate gate-backend gate-app pipeline dmg app-bundle
+.PHONY: gate gate-backend gate-app pipeline dmg app-bundle run
 
 gate: gate-backend gate-app
+
+# Run the app from the checkout against the repo's backend, for real dictation
+# without building a signed bundle. Needs `cd backend && uv sync --extra models`
+# once, and the models present in the Hugging Face cache. HF_HOME points at the
+# default cache so the offline backend finds the already-downloaded weights.
+run:
+	cd app && \
+	  WORDFLOW_BACKEND_PYTHON="$(CURDIR)/backend/.venv/bin/python3" \
+	  WORDFLOW_BACKEND_DIR="$(CURDIR)/backend" \
+	  HF_HOME="$(HOME)/.cache/huggingface" \
+	  swift run WordFlowApp
 
 gate-backend:
 	cd backend && uv run pytest -q -m "not pipeline and not manual"
