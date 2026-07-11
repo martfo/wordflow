@@ -220,6 +220,12 @@ time.
     onboarding downloader at first download; the engines load that pinned revision thereafter.
     Until a machine has downloaded, the lock is absent and only the downloader (which lifts the
     offline flags) may reach the network.
+- **No ffmpeg** (AC-12.2): `parakeet-mlx`'s own `transcribe(path)` shells out to ffmpeg to
+  load audio, and `mlx-whisper` does the same when given a path. WordFlow never gives either a
+  path: the backend already holds decoded 16 kHz mono PCM, so `ParakeetEngine` feeds the
+  model's front end directly (`get_logmel` then `generate`, the same path `transcribe` takes
+  minus the file load) and `WhisperEngine` passes the sample array to `mlx_whisper.transcribe`.
+  So the pipeline spawns no external binary and the shipped app needs no ffmpeg.
 - **Resident at launch** (AC-2.1): the active model is loaded during startup warm-up, so the
   first dictation carries no lazy-load penalty. `/health` reports `model_loaded` and
   `active_model`.
