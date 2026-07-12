@@ -1,4 +1,5 @@
-"""Generate the WordFlow app icon: a river of words."""
+"""Generate the WordFlow app icon: a clean river flowing corner to corner
+(top-left to bottom-right), with the word WordFlow carried along its current."""
 import math
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import numpy as np
@@ -8,123 +9,168 @@ MARGIN = 74
 RADIUS = int((S - 2 * MARGIN) * 0.2237)
 
 
-def load_font(size, bold=True):
-    candidates = [
-        "/System/Library/Fonts/SFNSRounded.ttf",
-        "/System/Library/Fonts/SFNS.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
+def find_font_spec():
+    """A clean bold brand face: Avenir Next Bold, then SF Pro, then Helvetica Neue.
+    Returns (path, index)."""
+    wanted = [
+        ("/System/Library/Fonts/Avenir Next.ttc", ["Bold", "Demi Bold", "Heavy"]),
+        ("/System/Library/Fonts/SFNSDisplay.ttf", ["Bold", "Heavy"]),
+        ("/System/Library/Fonts/SFNS.ttf", ["Bold"]),
+        ("/System/Library/Fonts/HelveticaNeue.ttc", ["Bold"]),
+        ("/System/Library/Fonts/Helvetica.ttc", ["Bold"]),
     ]
-    for path in candidates:
-        try:
-            return ImageFont.truetype(path, size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
+    for path, weights in wanted:
+        for index in range(0, 14):
+            try:
+                f = ImageFont.truetype(path, 64, index=index)
+            except Exception:
+                break
+            try:
+                family, style = f.getname()
+            except Exception:
+                continue
+            if any(w.lower() == style.lower() for w in weights):
+                print(f"font: {family} {style}  ({path}#{index})")
+                return path, index
+    return "/System/Library/Fonts/Helvetica.ttc", 1
 
 
-def vgrad(top, bot):
-    t = np.linspace(0, 1, S).reshape(S, 1, 1)
-    arr = np.array(top).reshape(1, 1, 3) * (1 - t) + np.array(bot).reshape(1, 1, 3) * t
-    return np.repeat(arr.astype("uint8"), S, axis=1)
+FONT_PATH, FONT_INDEX = find_font_spec()
 
 
-def hgrad(left, right):
-    t = np.linspace(0, 1, S).reshape(1, S, 1)
-    arr = np.array(left).reshape(1, 1, 3) * (1 - t) + np.array(right).reshape(1, 1, 3) * t
-    return np.repeat(arr.astype("uint8"), S, axis=0)
+def font_at(size):
+    return ImageFont.truetype(FONT_PATH, int(size), index=FONT_INDEX)
 
 
 # --- background: soft sky with a gentle centre glow, rounded square ---
-bg = vgrad((236, 245, 255), (196, 222, 250)).astype("float32")
 yy, xx = np.mgrid[0:S, 0:S]
-glow = np.exp(-(((xx - S * 0.5) ** 2 + (yy - S * 0.42) ** 2) / (2 * (S * 0.42) ** 2)))
-bg += (glow[:, :, None] * np.array([18, 12, 6]).reshape(1, 1, 3))
+ty = (yy / (S - 1))[:, :, None]
+bg = (np.array([236, 245, 255]).reshape(1, 1, 3) * (1 - ty)
+      + np.array([198, 223, 250]).reshape(1, 1, 3) * ty).astype("float32")
+glow = np.exp(-(((xx - S * 0.5) ** 2 + (yy - S * 0.5) ** 2) / (2 * (S * 0.44) ** 2)))
+bg += glow[:, :, None] * np.array([16, 11, 6]).reshape(1, 1, 3)
 bg_rgb = Image.fromarray(np.clip(bg, 0, 255).astype("uint8"), "RGB").convert("RGBA")
-mask = Image.new("L", (S, S), 0)
-ImageDraw.Draw(mask).rounded_rectangle([MARGIN, MARGIN, S - MARGIN, S - MARGIN],
-                                       radius=RADIUS, fill=255)
+rr_mask = Image.new("L", (S, S), 0)
+ImageDraw.Draw(rr_mask).rounded_rectangle([MARGIN, MARGIN, S - MARGIN, S - MARGIN],
+                                          radius=RADIUS, fill=255)
 icon = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-icon.paste(bg_rgb, (0, 0), mask)
+icon.paste(bg_rgb, (0, 0), rr_mask)
+
+# --- river centreline: corner to corner with a gentle S, anchored at both
+#     corners so the composition stays balanced ---
+pad = 44
+start = np.array([MARGIN + pad, MARGIN + pad], dtype="float64")
+end = np.array([S - MARGIN - pad, S - MARGIN - pad], dtype="float64")
+D = end - start
+n_hat = np.array([-D[1], D[0]]) / np.linalg.norm(D)
+AMP = S * 0.130
 
 
-# --- the river geometry: a gentle S flowing left -> right, narrow to wide ---
-def centerline(x):
-    t = x / S
-    return S * 0.5 + math.sin(t * math.pi * 1.7 + 0.5) * S * 0.135
+def centre(t):
+    return start + t * D + n_hat * (AMP * math.sin(2 * math.pi * t) * math.sin(math.pi * t))
 
 
-def halfwidth(x):
-    t = x / S
-    base = S * (0.055 + 0.07 * t)
-    # taper to a narrow source at the very left so the river "begins"
-    ramp = min(1.0, (x - (MARGIN + 26)) / (S * 0.14))
-    return base * (0.35 + 0.65 * max(0.0, ramp))
+def halfwidth(t):
+    return S * (0.072 + 0.016 * t)
 
 
-x0, x1 = MARGIN + 26, S - MARGIN - 26
-xs = list(range(x0, x1))
-top_edge = [(x, centerline(x) - halfwidth(x)) for x in xs]
-bot_edge = [(x, centerline(x) + halfwidth(x)) for x in xs]
-band_poly = top_edge + bot_edge[::-1]
+N = 2000
+ts = np.linspace(0, 1, N)
+pts = np.array([centre(t) for t in ts])
+seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+arc = np.concatenate([[0.0], np.cumsum(seg)])
+total_arc = float(arc[-1])
 
-band_mask = Image.new("L", (S, S), 0)
-ImageDraw.Draw(band_mask).polygon(band_poly, fill=255)
-band_mask = band_mask.filter(ImageFilter.GaussianBlur(1.5))
-band_mask = Image.composite(band_mask, Image.new("L", (S, S), 0), mask)  # clip to rounded rect
+# clean band with rounded caps
+top_edge, bot_edge = [], []
+for i in range(N):
+    tang = pts[min(i + 1, N - 1)] - pts[max(i - 1, 0)]
+    tang = tang / (np.linalg.norm(tang) + 1e-9)
+    nrm = np.array([-tang[1], tang[0]])
+    hw = halfwidth(ts[i])
+    top_edge.append(tuple(pts[i] + nrm * hw))
+    bot_edge.append(tuple(pts[i] - nrm * hw))
+band = Image.new("L", (S, S), 0)
+bd = ImageDraw.Draw(band)
+bd.polygon(top_edge + bot_edge[::-1], fill=255)
+for endc, t in ((pts[0], 0.0), (pts[-1], 1.0)):
+    hw = halfwidth(t)
+    bd.ellipse([endc[0] - hw, endc[1] - hw, endc[0] + hw, endc[1] + hw], fill=255)
+band = band.filter(ImageFilter.GaussianBlur(1.2))
+band = Image.composite(band, Image.new("L", (S, S), 0), rr_mask)
 
-# river fill: blue -> teal, plus a soft top highlight for a little depth
-river_rgb = Image.fromarray(hgrad((60, 156, 255), (16, 196, 170)), "RGB").convert("RGBA")
+# river fill: blue -> teal along the flow direction
+g = np.clip(((xx - MARGIN) + (yy - MARGIN)) / (2.0 * (S - 2 * MARGIN)), 0, 1)[:, :, None]
+c1, c2 = np.array([46, 141, 250]), np.array([16, 192, 166])
+river = (c1.reshape(1, 1, 3) * (1 - g) + c2.reshape(1, 1, 3) * g).astype("uint8")
+river_rgb = Image.fromarray(river, "RGB").convert("RGBA")
 
-# a soft drop shadow beneath the river for lift (drawn first)
-shadow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-sh_src = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-sh_src.paste(Image.new("RGBA", (S, S), (26, 66, 120, 110)), (0, 0), band_mask)
-sh_src = sh_src.filter(ImageFilter.GaussianBlur(16))
-icon.alpha_composite(sh_src, (0, 22))
-# the river on top
-icon.paste(river_rgb, (0, 0), band_mask)
+# soft drop shadow, then the river
+sh = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+sh.paste(Image.new("RGBA", (S, S), (24, 62, 116, 105)), (0, 0), band)
+sh = sh.filter(ImageFilter.GaussianBlur(18))
+icon.alpha_composite(sh, (6, 20))
+icon.paste(river_rgb, (0, 0), band)
 
-# --- current streamlines (white, translucent, wavy) ---
-stream = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-sd = ImageDraw.Draw(stream)
-for k, alpha, w in [(-0.45, 70, 7), (0.0, 95, 9), (0.5, 60, 6)]:
-    pts = [(x, centerline(x) + k * halfwidth(x)) for x in xs[::3]]
-    sd.line(pts, fill=(255, 255, 255, alpha), width=w, joint="curve")
-stream = stream.filter(ImageFilter.GaussianBlur(1.2))
-stream.putalpha(Image.composite(stream.getchannel("A"), Image.new("L", (S, S), 0), band_mask))
-icon = Image.alpha_composite(icon, stream)
+# subtle upper sheen (soft, no hard lines)
+sheen = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+ImageDraw.Draw(sheen).line([tuple(p) for p in pts[::4]], fill=(255, 255, 255, 38),
+                           width=int(halfwidth(0.5) * 0.85), joint="curve")
+sheen = sheen.filter(ImageFilter.GaussianBlur(26))
+sheen.putalpha(Image.composite(sheen.getchannel("A"), Image.new("L", (S, S), 0), band))
+icon.alpha_composite(sheen)
 
-# --- words flowing along the current, spaced so they never collide ---
-# A quiet phrase carried downstream. Each word is sized to the river's local
-# width and laid end to end with clear water between.
-phrase = ["words", "flow", "into", "ideas", "and", "stories"]
-x = x0 + int(S * 0.02)
-gap = int(S * 0.028)
-for word in phrase:
-    fs = int(max(34, min(1.35 * halfwidth(x + 40), 96)))
-    font = load_font(fs)
-    bbox = font.getbbox(word)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    if x + tw > x1 - int(S * 0.02):
-        break
-    xc = x + tw / 2
-    yc = centerline(xc)
-    slope = (centerline(xc + 6) - centerline(xc - 6)) / 12.0
-    angle = -math.degrees(math.atan(slope))
-    pad = 14
-    tile = Image.new("RGBA", (tw + 2 * pad, th + 2 * pad), (0, 0, 0, 0))
-    ImageDraw.Draw(tile).text((pad - bbox[0], pad - bbox[1]), word, font=font,
-                              fill=(255, 255, 255, 245))
-    tile = tile.rotate(angle, expand=True, resample=Image.BICUBIC)
-    icon.alpha_composite(tile, (int(xc - tile.width / 2), int(yc - tile.height / 2)))
-    x += tw + gap
+# --- WordFlow flowing along the current ---
+word = "WordFlow"
+TRACK = 1.12  # letter tracking along the path
 
-# --- gentle inner border for definition ---
-border = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-ImageDraw.Draw(border).rounded_rectangle(
-    [MARGIN, MARGIN, S - MARGIN, S - MARGIN], radius=RADIUS, outline=(255, 255, 255, 120), width=3)
-icon = Image.alpha_composite(icon, border)
+
+def word_len(size):
+    f = font_at(size)
+    return sum(f.getlength(ch) for ch in word) * TRACK
+
+
+# size the word to span ~62% of the river
+target = total_arc * 0.62
+lo, hi = 40.0, 260.0
+for _ in range(26):
+    mid = (lo + hi) / 2
+    if word_len(mid) > target:
+        hi = mid
+    else:
+        lo = mid
+size = lo
+font = font_at(size)
+advances = [font.getlength(ch) * TRACK for ch in word]
+span = sum(advances)
+
+
+def point_angle(s):
+    s = min(max(s, 0.0), total_arc)
+    i = min(max(int(np.searchsorted(arc, s)), 1), N - 1)
+    f = (s - arc[i - 1]) / (arc[i] - arc[i - 1] + 1e-9)
+    p = pts[i - 1] * (1 - f) + pts[i] * f
+    tang = pts[i] - pts[i - 1]
+    return p, math.degrees(math.atan2(tang[1], tang[0]))
+
+
+s = (total_arc - span) / 2.0
+for ch, adv in zip(word, advances):
+    p, ang = point_angle(s + adv / 2.0)
+    tile = Image.new("RGBA", (int(adv) + 40, int(size * 1.6) + 40), (0, 0, 0, 0))
+    td = ImageDraw.Draw(tile)
+    bbox = font.getbbox(ch)
+    cx = tile.width / 2 - (bbox[0] + bbox[2]) / 2
+    cy = tile.height / 2 - (bbox[1] + bbox[3]) / 2
+    td.text((cx + 2, cy + 3), ch, font=font, fill=(20, 60, 110, 90))  # soft shadow
+    td.text((cx, cy), ch, font=font, fill=(255, 255, 255, 250))
+    tile = tile.rotate(-ang, expand=True, resample=Image.BICUBIC)
+    icon.alpha_composite(tile, (int(p[0] - tile.width / 2), int(p[1] - tile.height / 2)))
+    s += adv
+
+# gentle inner border for definition
+ImageDraw.Draw(icon).rounded_rectangle(
+    [MARGIN, MARGIN, S - MARGIN, S - MARGIN], radius=RADIUS, outline=(255, 255, 255, 110), width=3)
 
 icon.save("icon_master.png")
 print("wrote icon_master.png")
