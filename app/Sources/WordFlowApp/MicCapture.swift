@@ -109,7 +109,15 @@ final class MicCapture: ObservableObject {
         _ = await stop()
     }
 
+    /// A short tail kept after the key is released, so the last word is not cut
+    /// off mid-syllable. Runs on ioQueue, which serialises with the next
+    /// dictation's start, so there is no overlap.
+    static let tailPadSeconds: TimeInterval = 0.3
+
     nonisolated private func performStop() -> [Float] {
+        // The engine and tap are still live during this pad, so the trailing
+        // audio keeps accumulating before we tear down.
+        Thread.sleep(forTimeInterval: Self.tailPadSeconds)
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         return accumulationQueue.sync { samples }
