@@ -38,6 +38,21 @@ def rms(samples: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(samples))))
 
 
+def normalise_peak(samples: np.ndarray, target: float = 0.95, max_gain: float = 40.0) -> np.ndarray:
+    """Scale the audio so its loudest sample sits near full scale. Quiet capture
+    (a distant or low-gain mic) otherwise loses the attack of consonants and the
+    model mishears them; normalising recovers them. The gain is capped so
+    near-silent buffers are not blown up into noise. Applied after the silence
+    gate, so there is always real speech to normalise against."""
+    if samples.size == 0:
+        return samples
+    peak = float(np.max(np.abs(samples)))
+    if peak <= 1e-4:
+        return samples
+    gain = min(target / peak, max_gain)
+    return (samples * gain).astype(np.float32)
+
+
 def looks_silent(samples: np.ndarray, rate: int, floor: float = SILENCE_RMS) -> bool:
     """A pre-model check: too short, or too quiet to be speech."""
     if samples.size == 0 or rate <= 0:

@@ -33,10 +33,10 @@ class WhisperEngine:
     def transcribe(self, samples: np.ndarray, sample_rate: int) -> str:
         if not self._loaded:
             self.load()
-        result = self._transcribe(
-            np.ascontiguousarray(samples, dtype=np.float32),
-            path_or_hf_repo=self.repo, language="en",
-        )
+        from wordflow.asr.audio import normalise_peak
+
+        audio = normalise_peak(np.ascontiguousarray(samples, dtype=np.float32))
+        result = self._transcribe(audio, path_or_hf_repo=self.repo, language="en")
         return (result.get("text", "") or "").strip()
 
     def unload(self) -> None:
