@@ -10,6 +10,11 @@ import CoreAudio
 import Foundation
 import WordFlowCore
 
+/// A short tail kept recording after the key is released, so the last word is
+/// not cut off mid-syllable. File-scoped so the nonisolated capture callback can
+/// read it.
+private let micTailPadSeconds: TimeInterval = 0.3
+
 @MainActor
 final class MicCapture: ObservableObject {
     @Published var level: Float = 0
@@ -109,15 +114,10 @@ final class MicCapture: ObservableObject {
         _ = await stop()
     }
 
-    /// A short tail kept after the key is released, so the last word is not cut
-    /// off mid-syllable. Runs on ioQueue, which serialises with the next
-    /// dictation's start, so there is no overlap.
-    static let tailPadSeconds: TimeInterval = 0.3
-
     nonisolated private func performStop() -> [Float] {
         // The engine and tap are still live during this pad, so the trailing
         // audio keeps accumulating before we tear down.
-        Thread.sleep(forTimeInterval: Self.tailPadSeconds)
+        Thread.sleep(forTimeInterval: micTailPadSeconds)
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         return accumulationQueue.sync { samples }
