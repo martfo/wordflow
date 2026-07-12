@@ -49,9 +49,12 @@ final class RealRuntimeInstaller: RuntimeInstalling {
 
     func installDependencies(at runtime: URL) throws {
         // The models extra carries Parakeet and Whisper via MLX. Without it the
-        // installed app could accept audio but never transcribe it.
-        try runUV(["pip", "install", "--python", venvPython(runtime).path,
-                   "\(bundledBackend.path)[models]"],
+        // installed app could accept audio but never transcribe it. uv is run
+        // from inside the backend directory and given ".[models]", so a space in
+        // the bundle path (e.g. a "Code projects" folder) never trips its
+        // requirement parser.
+        try runUV(["pip", "install", "--python", venvPython(runtime).path, ".[models]"],
+                  workingDirectory: bundledBackend,
                   step: "installing the backend")
     }
 
@@ -64,10 +67,12 @@ final class RealRuntimeInstaller: RuntimeInstalling {
 
     // MARK: - Plumbing
 
-    private func runUV(_ arguments: [String], extraEnvironment: [String: String] = [:], step: String) throws {
+    private func runUV(_ arguments: [String], extraEnvironment: [String: String] = [:],
+                       workingDirectory: URL? = nil, step: String) throws {
         let process = Process()
         process.executableURL = bundledUV
         process.arguments = arguments
+        if let workingDirectory { process.currentDirectoryURL = workingDirectory }
         var environment = ProcessInfo.processInfo.environment
         environment.merge(extraEnvironment) { _, new in new }
         process.environment = environment

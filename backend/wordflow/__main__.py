@@ -11,12 +11,14 @@ import sys
 from pathlib import Path
 
 
-def _pin_offline(models_dir: Path) -> None:
-    """Pin the Hugging Face libraries offline and point their cache at the app's
-    models folder. Set before importing anything that pulls in huggingface_hub."""
+def _pin_offline() -> None:
+    """Pin the Hugging Face libraries offline, so model loading never phones
+    home. Set before importing anything that pulls in huggingface_hub. The cache
+    location is left at the Hugging Face default (~/.cache/huggingface), so the
+    weights are shared with any other MLX use on the machine and are downloaded
+    once per Mac by the onboarding downloader."""
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-    os.environ.setdefault("HF_HOME", str(models_dir))
 
 
 def _exit_with_parent() -> None:
@@ -42,15 +44,14 @@ def main(config_path: str) -> None:
 
     config = load_config(Path(config_path))
     data_root = Path(config.data_path)
-    models_dir = data_root.parent / "models"
-    _pin_offline(models_dir)
+    _pin_offline()
     _exit_with_parent()
 
     import uvicorn
 
     from wordflow.api.app import AppState, create_app
     from wordflow.asr.manager import ModelManager
-    from wordflow.asr.registry import build_engine, pinned_revisions
+    from wordflow.asr.registry import build_engine
     from wordflow.cleanup.pipeline import default_pipeline
     from wordflow.history.retention import purge_old_entries, retention_days
     from wordflow.logging.setup import configure_logging
@@ -71,9 +72,8 @@ def main(config_path: str) -> None:
     from wordflow.storage import settings as settings_store
 
     active = settings_store.get(conn, "active_model", config.active_model)
-    revisions = pinned_revisions(models_dir)
     manager = ModelManager(
-        factory=lambda name: build_engine(name, config, revisions),
+        factory=lambda name: build_engine(name, config),
         active=active,
         idle_unload_minutes=int(settings_store.get(conn, "idle_unload_minutes", config.idle_unload_minutes)),
     )

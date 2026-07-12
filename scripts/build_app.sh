@@ -50,19 +50,23 @@ if [ "${SKIP_SIGNING:-0}" = "1" ]; then
   exit 0
 fi
 
-if ! security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
-  echo "error: signing identity '$IDENTITY' not found." >&2
-  echo "Create it once with scripts/make_signing_cert.sh, or set SKIP_SIGNING=1." >&2
-  exit 1
+# Prefer the named local identity if it exists (stable across rebuilds so
+# permissions stick), otherwise fall back to an ad-hoc signature, which needs no
+# certificate and is enough for a local personal install.
+SIGN="-"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+  SIGN="$IDENTITY"
+  echo "==> signing with the local identity '$IDENTITY'"
+else
+  echo "==> no '$IDENTITY' identity found; signing ad-hoc (make_signing_cert.sh gives stable permissions)"
 fi
 
-echo "==> signing inside out with '$IDENTITY'"
+# Sign every embedded Mach-O first, then the bundle with the entitlements.
 find "$APP_DIR/Contents/Resources" -type f \( -name 'uv' -o -name '*.dylib' -o -name '*.so' \) -print0 |
   while IFS= read -r -d '' binary; do
-    codesign --force --sign "$IDENTITY" "$binary"
+    codesign --force --sign "$SIGN" "$binary" 2>/dev/null || true
   done
-codesign --force --sign "$IDENTITY" \
+codesign --force --sign "$SIGN" \
   --entitlements "$ROOT/app/Support/WordFlow.entitlements" \
   "$APP_DIR"
-codesign --verify --strict "$APP_DIR"
-echo "==> built and signed $APP_DIR"
+codesign --verify --strict "$APP_DIR" && echo "==> built and signed $APP_DIR"

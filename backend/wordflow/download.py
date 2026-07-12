@@ -11,7 +11,6 @@ returns, normal operation runs fully offline.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -24,12 +23,11 @@ REPOS = {
 }
 
 
-def _lift_offline(models_dir: Path) -> None:
-    # The one moment the guarantee is relaxed, on purpose.
+def _lift_offline() -> None:
+    # The one moment the guarantee is relaxed, on purpose. The cache stays at the
+    # Hugging Face default, shared with the running backend.
     os.environ.pop("HF_HUB_OFFLINE", None)
     os.environ.pop("TRANSFORMERS_OFFLINE", None)
-    os.environ["HF_HOME"] = str(models_dir)
-    models_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _revision_from_snapshot(path: str) -> str | None:
@@ -44,8 +42,7 @@ def _revision_from_snapshot(path: str) -> str | None:
 
 def download(config_path: str) -> dict[str, str]:
     config = load_config(Path(config_path))
-    models_dir = Path(config.data_path).parent / "models"
-    _lift_offline(models_dir)
+    _lift_offline()
 
     from huggingface_hub import snapshot_download
 
@@ -59,9 +56,7 @@ def download(config_path: str) -> dict[str, str]:
             revisions[name] = revision
         print(f"Done {name}.", flush=True)
 
-    lock = models_dir / "models.lock.json"
-    lock.write_text(json.dumps(revisions, indent=2) + "\n")
-    print(f"Pinned revisions written to {lock}", flush=True)
+    print(f"Models ready: {', '.join(revisions) or 'none resolved'}", flush=True)
     return revisions
 
 
