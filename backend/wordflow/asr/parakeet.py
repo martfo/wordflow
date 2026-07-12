@@ -39,6 +39,8 @@ class ParakeetEngine:
         # PCM, so we feed the model's front end directly: the same get_logmel ->
         # generate path transcribe() uses, minus the file load. get_logmel's
         # byte-view trick needs float32 input.
+        from wordflow.asr.audio import normalise_peak
+
         target_rate = self._model.preprocessor_config.sample_rate
         audio = np.ascontiguousarray(samples, dtype=np.float32)
         if sample_rate != target_rate and audio.size:
@@ -46,6 +48,7 @@ class ParakeetEngine:
             audio = np.interp(positions, np.arange(len(audio)), audio).astype(np.float32)
         if audio.size == 0:
             return ""
+        audio = normalise_peak(audio)
         mel = get_logmel(mx.array(audio), self._model.preprocessor_config)
         result = self._model.generate(mel)[0]
         return (getattr(result, "text", "") or "").strip()

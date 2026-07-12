@@ -220,6 +220,12 @@ time.
     onboarding downloader at first download; the engines load that pinned revision thereafter.
     Until a machine has downloaded, the lock is absent and only the downloader (which lifts the
     offline flags) may reach the network.
+- **Level normalisation**: captured audio is peak-normalised to ~0.95 in the engine, after the
+  silence gate, before the model runs. Quiet capture (a distant or low-gain mic, or AirPods
+  input) otherwise loses the attack of consonants and the model mishears them ("brown" heard
+  as "round"); normalising recovers them, with the gain capped so a near-silent buffer is not
+  amplified into noise. Applied in both engines so live, bake-off, accuracy, and pipeline paths
+  preprocess identically.
 - **No ffmpeg** (AC-12.2): `parakeet-mlx`'s own `transcribe(path)` shells out to ffmpeg to
   load audio, and `mlx-whisper` does the same when given a path. WordFlow never gives either a
   path: the backend already holds decoded 16 kHz mono PCM, so `ParakeetEngine` feeds the
