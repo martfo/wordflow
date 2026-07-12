@@ -15,6 +15,7 @@ final class DictationController: ObservableObject {
         case listening     // audio flowing (AC-1.6)
         case locked        // hands-free
         case processing    // transcribing
+        case notice(String)  // a brief outcome message before hiding
     }
 
     @Published private(set) var pill: PillState = .hidden
@@ -39,6 +40,8 @@ final class DictationController: ObservableObject {
     private var wasLockedAtStop = false
     private var secureInputTimer: Timer?
     private var messageClear: DispatchWorkItem?
+    private var noticeHide: DispatchWorkItem?
+    private var lastInsertNotice: String?
     private var cancellables = Set<AnyCancellable>()
 
     init(client: BackendClient, microphones: MicrophoneListModel) {
@@ -153,34 +156,37 @@ final class DictationController: ObservableObject {
         let locked = wasLockedAtStop
         Task {
             let samples = await capture.stop()
-            resetPillAfterStop()
             let wav = AudioWAV.wav(from: samples).base64EncodedString()
+            var notice = "Nothing heard."
             do {
                 let result = try await client.transcribe(
                     audioBase64: wav, sampleRate: AudioWAV.targetSampleRate,
                     targetApp: target.app, targetBundleID: target.bundleID, locked: locked)
                 if result.nothing_heard {
                     insertionQueue.complete(sequence, text: nil)
-                    flash("Nothing heard.")
+                    notice = "Nothing heard."
                 } else {
-                    insertionQueue.complete(sequence, text: result.text)
+                    lastInsertNotice = nil
+                    insertionQueue.complete(sequence, text: result.text)  // inserts, sets lastInsertNotice
+                    notice = lastInsertNotice ?? "Inserted"
                     if let id = result.dictation_id {
                         Task { await client.markInserted(id, inserted: true) }
                     }
                 }
             } catch {
                 insertionQueue.complete(sequence, text: nil)
-                flash("That dictation could not be transcribed. It is in History if the backend recovers.")
+                notice = "Could not transcribe. It is safe in History if the backend recovers."
             }
             inFlight = max(0, inFlight - 1)
+            finishWithNotice(notice)
         }
     }
 
     private func discard() {
+        // A sub-500 ms tap with no speech: discard silently, no notice (AC-1.2-a).
         Task {
             await capture.cancel()
-            resetPillAfterStop()
-            flash("Nothing heard.")
+            if inFlight == 0 { pill = .hidden }
         }
     }
 
@@ -188,22 +194,30 @@ final class DictationController: ObservableObject {
         pendingTapTick?.cancel()
         Task {
             await capture.cancel()
-            pill = .hidden
+            pill = inFlight > 0 ? .processing : .hidden
         }
     }
 
-    private func resetPillAfterStop() {
-        // Keep the processing pill up only while something is in flight.
-        pill = inFlight > 0 ? .processing : .hidden
+    /// Show a brief outcome in the pill, then hide it once nothing is in flight.
+    private func finishWithNotice(_ message: String) {
+        guard inFlight == 0 else { pill = .processing; return }
+        pill = .notice(message)
+        noticeHide?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if case .notice = self.pill, self.inFlight == 0 { self.pill = .hidden }
+        }
+        noticeHide = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2, execute: work)
     }
 
     private func performInsertion(_ text: String) {
         let outcome = inserter.insert(text)
         switch outcome {
-        case .inserted: break
-        case .clipboard: flash("No text field was focused, so the text is on the clipboard.")
-        case .refusedSecureField: flash("A password field is focused, so nothing was inserted. It is in History.")
-        case .nothing: break
+        case .inserted: lastInsertNotice = "Inserted"
+        case .clipboard: lastInsertNotice = "No text field focused, so it is on the clipboard."
+        case .refusedSecureField: lastInsertNotice = "A password field is focused, so nothing was inserted. It is in History."
+        case .nothing: lastInsertNotice = nil
         }
     }
 

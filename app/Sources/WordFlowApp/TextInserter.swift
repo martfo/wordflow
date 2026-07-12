@@ -49,9 +49,10 @@ final class TextInserter {
             place(onClipboard: text)
             return .clipboard
         case .insertAtCursor(let text):
-            if insertViaAccessibility(text) {
-                return .inserted
-            }
+            // A clipboard paste is used rather than the Accessibility set-value
+            // API: many apps (Electron, web views) accept the AX set and then
+            // silently drop it, so nothing would appear. Cmd-V pastes at the
+            // caret and works everywhere; the prior clipboard is restored after.
             pasteViaClipboard(text)
             return .inserted
         }
@@ -69,25 +70,10 @@ final class TextInserter {
     }
 
     private func hasFocusedTextField() -> Bool {
-        guard let element = focusedElement() else { return false }
-        var settable: DarwinBoolean = false
-        // A field we can insert into exposes a settable selected-text or value.
-        if AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &settable) == .success, settable.boolValue {
-            return true
-        }
-        if AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success, settable.boolValue {
-            return true
-        }
-        return false
-    }
-
-    private func insertViaAccessibility(_ text: String) -> Bool {
-        guard let element = focusedElement() else { return false }
-        // Replace the current selection (empty selection = caret) with the text,
-        // so it lands at the cursor rather than being appended.
-        let status = AXUIElementSetAttributeValue(
-            element, kAXSelectedTextAttribute as CFString, text as CFString)
-        return status == .success
+        // Any focused element (a text field, a web area, an Electron input)
+        // means we can paste at the caret. Only when nothing at all is focused
+        // do we fall back to leaving the text on the clipboard (AC-4.3).
+        focusedElement() != nil
     }
 
     // MARK: - Clipboard
@@ -104,8 +90,10 @@ final class TextInserter {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         sendCommandV()
-        // Restore the user's clipboard once the paste has been delivered.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        // Restore the user's clipboard once the paste has been delivered. The
+        // delay is generous so slower apps have finished reading the pasteboard
+        // before it is put back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             self.restorePasteboard(pasteboard, from: snapshot)
         }
     }
