@@ -28,6 +28,27 @@ scripts/    build_app.sh, build_dmg.sh, make_signing_cert.sh
 docs/       the manual hardware checklist
 ```
 
+## Installing (double-click app, no terminal)
+
+```sh
+make dmg
+```
+
+builds `dist/WordFlow.dmg`. Open it, drag **WordFlow.app** to Applications, then
+right-click the app and choose **Open** once (it is signed locally, not
+notarised). WordFlow lives in the menu bar — there is no Dock icon.
+
+On first launch the app provisions its own Python backend into
+`~/Library/Application Support/WordFlow/runtime` (from the bundled `uv`, no
+system Python needed) and, if the speech models are not already in the Hugging
+Face cache, downloads them once. After that it runs fully offline. Grant
+**Microphone** and **Accessibility** when asked — Accessibility is what lets the
+§ hotkey and text insertion work.
+
+`make dmg` signs ad-hoc by default (no certificate needed). For permissions that
+survive rebuilds without re-prompting, create a stable local identity once with
+`scripts/make_signing_cert.sh`.
+
 ## Developing
 
 The backend runs under uv; the app is a SwiftPM package.
@@ -35,18 +56,13 @@ The backend runs under uv; the app is a SwiftPM package.
 ```sh
 make gate        # the fast gate: backend pytest + Swift Testing (the meaning of green)
 make pipeline    # slow tier: the real MLX models against the voice fixtures (reference machine)
-make dmg         # build and package the signed app
+make run         # run from the checkout (needs: cd backend && uv sync --extra models)
+make dmg         # build and package the installable app
 ```
 
-To run the app from a checkout against the repo's backend, point it at a Python
-environment with the backend installed and set:
-
-```sh
-export WORDFLOW_BACKEND_PYTHON=backend/.venv/bin/python3
-export WORDFLOW_BACKEND_DIR="$PWD/backend"
-```
-
-The shipped app needs none of this: on first run it provisions its own Python
+`make run` points the app at the repo's backend via
+`WORDFLOW_BACKEND_PYTHON` / `WORDFLOW_BACKEND_DIR`, so it skips provisioning. The
+installed app needs none of this: on first run it provisions its own Python
 backend into `~/Library/Application Support/WordFlow/runtime` from the bundled uv
 binary, and downloads the models once. All user data (history, dictionary,
 config, logs) lives in `~/Library/Application Support/WordFlow/data`; copy that

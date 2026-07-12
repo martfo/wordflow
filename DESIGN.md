@@ -66,8 +66,6 @@ vault (AC-10.3). FileVault provides encryption at rest.
     python/                standalone CPython 3.11 fetched by uv
     venv/                  the backend virtualenv
     .provisioned          marker holding runtimeVersion; written only on a complete run
-  models/                  Hugging Face cache (per-Mac; HF_HOME points here)
-    models.lock.json       resolved model repo + commit revisions, written by the downloader
   data/                    THE PORTABLE FOLDER — copy this between Macs (AC-12.5)
     index.sqlite           history and dictionary-link store (WAL)
     config.json            backend config (below)
@@ -77,9 +75,11 @@ vault (AC-10.3). FileVault provides encryption at rest.
     audio/                 debug only: kept dictation audio when "keep audio" is on
 ```
 
-`runtime/` and `models/` are rebuilt on a new Mac by provisioning and the model download.
-`data/` is the only folder the user ever needs to carry across, and it holds no audio unless
-the debug toggle is on.
+The speech-model weights are **not** stored under this tree: they live in the standard Hugging
+Face cache (`~/.cache/huggingface`), shared with any other MLX use on the machine and
+downloaded once per Mac by the onboarding downloader. `runtime/` is rebuilt on a new Mac by
+provisioning. `data/` is the only folder the user ever needs to carry across, and it holds no
+audio unless the debug toggle is on.
 
 ## Provisioning and the backend runtime
 
@@ -241,10 +241,10 @@ time.
 - **Idle unload** (AC-2.4): with `idle_unload_minutes > 0`, the model is unloaded after that
   idle period (backend RSS drops); the next dictation reloads it, the pill showing a loading
   state rather than failing.
-- **Offline pinned** (AC-10.2): the backend process runs with `HF_HUB_OFFLINE=1` and
-  `TRANSFORMERS_OFFLINE=1` set in `__main__` before any HF import, and `HF_HOME` pointed at
-  `models/`. Only the onboarding downloader clears the two flags, for the duration of the
-  download alone.
+- **Offline pinned** (AC-10.2): the backend process sets `HF_HUB_OFFLINE=1` and
+  `TRANSFORMERS_OFFLINE=1` in `__main__` before any HF import, so model loading resolves from
+  the local Hugging Face cache and never phones home. Only the onboarding downloader clears the
+  two flags, for the duration of the download alone.
 
 ## Cleanup pipeline (deterministic, pluggable)
 
