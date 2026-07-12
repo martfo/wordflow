@@ -34,6 +34,7 @@ struct PillView: View {
             case .listening: Image(systemName: "mic.fill").foregroundStyle(.red)
             case .locked: Image(systemName: "lock.fill").foregroundStyle(.orange)
             case .processing: ProgressView().controlSize(.small)
+            case .notice: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             case .hidden: EmptyView()
             }
         }
@@ -46,6 +47,7 @@ struct PillView: View {
         case .listening: return "Listening"
         case .locked: return "Listening, hands-free"
         case .processing: return "Working on it…"
+        case .notice(let message): return message
         case .hidden: return ""
         }
     }

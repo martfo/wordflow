@@ -42,7 +42,7 @@ struct MenuBarLabel: View {
         case .listening, .starting: return "mic.fill"
         case .locked: return "lock.fill"
         case .processing: return "ellipsis.circle"
-        case .hidden: return "waveform"
+        case .notice, .hidden: return "waveform"
         }
     }
 }
