@@ -50,15 +50,22 @@ if [ "${SKIP_SIGNING:-0}" = "1" ]; then
   exit 0
 fi
 
-# Prefer the named local identity if it exists (stable across rebuilds so
-# permissions stick), otherwise fall back to an ad-hoc signature, which needs no
-# certificate and is enough for a local personal install.
+# A stable signing identity keeps macOS permissions (Accessibility, Microphone)
+# across rebuilds; ad-hoc signatures change every build and lose the grant.
+# Prefer the configured identity, then any local self-signed "*Local Signing"
+# identity on the machine, then ad-hoc as a last resort.
 SIGN="-"
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
   SIGN="$IDENTITY"
-  echo "==> signing with the local identity '$IDENTITY'"
 else
-  echo "==> no '$IDENTITY' identity found; signing ad-hoc (make_signing_cert.sh gives stable permissions)"
+  ALT="$(security find-identity -v -p codesigning 2>/dev/null | grep -oE '"[^"]*Local Signing"' | head -1 | tr -d '"')"
+  [ -n "$ALT" ] && SIGN="$ALT"
+fi
+if [ "$SIGN" = "-" ]; then
+  echo "==> no local signing identity; signing ad-hoc (permissions will not persist across rebuilds)"
+  echo "    create one once with scripts/make_signing_cert.sh for stable permissions"
+else
+  echo "==> signing with the stable local identity '$SIGN'"
 fi
 
 # Sign every embedded Mach-O first, then the bundle with the entitlements.
