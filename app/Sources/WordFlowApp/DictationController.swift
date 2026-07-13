@@ -23,6 +23,7 @@ final class DictationController: ObservableObject {
     @Published private(set) var secureInputActive = false
     @Published private(set) var inFlight = 0
     @Published private(set) var level: Float = 0
+    @Published private(set) var needsAccessibility = false
 
     var isRecording: Bool { pill == .starting || pill == .listening || pill == .locked }
 
@@ -42,6 +43,8 @@ final class DictationController: ObservableObject {
     private var messageClear: DispatchWorkItem?
     private var noticeHide: DispatchWorkItem?
     private var lastInsertNotice: String?
+    private var accessibilityPoll: Timer?
+    private var hotkey: HotkeyKind = .section
     private var cancellables = Set<AnyCancellable>()
 
     init(client: BackendClient, microphones: MicrophoneListModel) {
@@ -54,10 +57,9 @@ final class DictationController: ObservableObject {
     // MARK: - Lifecycle
 
     func start(hotkey: HotkeyKind) {
+        self.hotkey = hotkey
         monitor.setHotkey(hotkey)
-        if !monitor.enable() {
-            statusMessage = "Turn on Accessibility for WordFlow in System Settings so the hotkey can work."
-        }
+        ensureHotkeyEnabled(promptIfNeeded: true)
         capture.onFirstBuffer = { [weak self] in self?.onSamplesFlowing() }
         capture.onSpeech = { [weak self] in self?.feed(.speechDetected) }
         capture.$level
@@ -78,12 +80,47 @@ final class DictationController: ObservableObject {
     }
 
     func setHotkey(_ kind: HotkeyKind) {
+        hotkey = kind
         monitor.setHotkey(kind)
     }
 
     /// Pause and resume disable/enable the tap, so § types normally while paused.
     func setPaused(_ paused: Bool, hotkey: HotkeyKind) {
-        if paused { monitor.disable() } else { monitor.setHotkey(hotkey); monitor.enable() }
+        self.hotkey = hotkey
+        if paused { monitor.disable() } else { monitor.setHotkey(hotkey); ensureHotkeyEnabled(promptIfNeeded: false) }
+    }
+
+    /// Try to enable the event tap. If it fails (Accessibility not granted),
+    /// flag it, optionally trigger the system grant dialog, and poll so the
+    /// hotkey turns on by itself the moment the user flips the switch.
+    private func ensureHotkeyEnabled(promptIfNeeded: Bool) {
+        if monitor.enable() {
+            needsAccessibility = false
+            accessibilityPoll?.invalidate()
+            return
+        }
+        needsAccessibility = true
+        messageClear?.cancel()
+        statusMessage = "WordFlow needs Accessibility access for the hotkey. Use “Open Accessibility Settings” below."
+        if promptIfNeeded { Accessibility.prompt() }
+        accessibilityPoll?.invalidate()
+        accessibilityPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                guard Accessibility.isTrusted else { return }
+                self.monitor.setHotkey(self.hotkey)
+                if self.monitor.enable() {
+                    self.needsAccessibility = false
+                    self.accessibilityPoll?.invalidate()
+                    self.statusMessage = nil
+                    self.flash("Accessibility is on. Hold \(self.hotkey.display) to dictate.")
+                }
+            }
+        }
+    }
+
+    func openAccessibilitySettings() {
+        Accessibility.openSettings()
     }
 
     // MARK: - Event handling

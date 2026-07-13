@@ -15,6 +15,9 @@ struct MenuContent: View {
         if let message = controller.statusMessage {
             Text(message)
         }
+        if controller.needsAccessibility {
+            Button("Open Accessibility Settings…") { controller.openAccessibilitySettings() }
+        }
         Divider()
 
         Button(model.paused ? "Resume dictation" : "Pause dictation") {
