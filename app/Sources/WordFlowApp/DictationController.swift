@@ -24,6 +24,7 @@ final class DictationController: ObservableObject {
     @Published private(set) var inFlight = 0
     @Published private(set) var level: Float = 0
     @Published private(set) var needsAccessibility = false
+    @Published private(set) var hotkeyActive = false
 
     var isRecording: Bool { pill == .starting || pill == .listening || pill == .locked }
 
@@ -74,6 +75,23 @@ final class DictationController: ObservableObject {
         feed(.escape)
     }
 
+    /// Manual dictation from the menu: works even when the hotkey is unavailable
+    /// (Accessibility not granted, secure input, an unusual keyboard). Start on
+    /// the first click, stop and transcribe on the next.
+    func toggleDictate() {
+        switch pill {
+        case .hidden, .notice:
+            beginCapture()
+        case .starting, .listening, .locked:
+            finishAndTranscribe()
+        case .processing:
+            break
+        }
+    }
+
+    /// Whether a dictation is currently being recorded, for the menu label.
+    var isDictating: Bool { isRecording }
+
     func stop() {
         monitor.disable()
         secureInputTimer?.invalidate()
@@ -96,9 +114,11 @@ final class DictationController: ObservableObject {
     private func ensureHotkeyEnabled(promptIfNeeded: Bool) {
         if monitor.enable() {
             needsAccessibility = false
+            hotkeyActive = true
             accessibilityPoll?.invalidate()
             return
         }
+        hotkeyActive = false
         needsAccessibility = true
         messageClear?.cancel()
         statusMessage = "WordFlow needs Accessibility access for the hotkey. Use “Open Accessibility Settings” below."
@@ -111,6 +131,7 @@ final class DictationController: ObservableObject {
                 self.monitor.setHotkey(self.hotkey)
                 if self.monitor.enable() {
                     self.needsAccessibility = false
+                    self.hotkeyActive = true
                     self.accessibilityPoll?.invalidate()
                     self.statusMessage = nil
                     self.flash("Accessibility is on. Hold \(self.hotkey.display) to dictate.")
@@ -158,6 +179,7 @@ final class DictationController: ObservableObject {
     // MARK: - Capture and transcription
 
     private func beginCapture() {
+        guard !capture.isCapturing else { return }
         pill = .starting
         wasLockedAtStop = false
         Task {

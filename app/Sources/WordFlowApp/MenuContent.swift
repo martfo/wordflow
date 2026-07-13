@@ -20,10 +20,16 @@ struct MenuContent: View {
         }
         Divider()
 
+        // Manual dictation, always available even if the hotkey is blocked.
+        Button(controller.isDictating ? "Stop dictating" : "Dictate") {
+            controller.toggleDictate()
+        }
+        .keyboardShortcut("d")
+
         Button(model.paused ? "Resume dictation" : "Pause dictation") {
             model.paused.toggle()
         }
-        Text("Hotkey: hold \(model.hotkeyKind.display)")
+        Text(hotkeyStatus)
 
         Menu("Model") {
             ForEach(["parakeet", "whisper"], id: \.self) { name in
@@ -61,5 +67,14 @@ struct MenuContent: View {
 
     private func displayName(_ name: String) -> String {
         name == "parakeet" ? "Parakeet (primary)" : "Whisper large-v3-turbo"
+    }
+
+    /// A plain diagnostic so the hotkey state is visible at a glance.
+    private var hotkeyStatus: String {
+        if controller.hotkeyActive {
+            return "Hotkey: hold \(model.hotkeyKind.display) (ready)"
+        }
+        let access = Accessibility.isTrusted ? "Accessibility on" : "Accessibility off"
+        return "Hotkey \(model.hotkeyKind.display): not active — \(access). Use Dictate above."
     }
 }
