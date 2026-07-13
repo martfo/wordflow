@@ -20,15 +20,12 @@ struct MenuContent: View {
         }
         Divider()
 
-        // Manual dictation, always available even if the hotkey is blocked.
-        Button(controller.isDictating ? "Stop dictating" : "Dictate") {
+        // One toggle: Dictate when idle, Pause dictation while listening.
+        Button(controller.isDictating ? "Pause dictation" : "Dictate") {
             controller.toggleDictate()
         }
         .keyboardShortcut("d")
 
-        Button(model.paused ? "Resume dictation" : "Pause dictation") {
-            model.paused.toggle()
-        }
         Text(hotkeyStatus)
 
         Menu("Model") {
