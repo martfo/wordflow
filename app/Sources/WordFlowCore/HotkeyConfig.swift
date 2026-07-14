@@ -6,33 +6,38 @@
 import Foundation
 
 public enum HotkeyKind: String, CaseIterable, Sendable {
-    case section        // §, the default on ISO/UK keyboards
-    case rightCommand   // Right ⌘, the ANSI fallback
+    case rightControl   // Right ⌃, the default: a modifier, so it works even
+                        // while another app has secure input on (character keys
+                        // are suppressed then, modifier events are not)
+    case rightCommand   // Right ⌘
     case fn             // the fn / Globe key
+    case section        // §, only usable when secure input is off
     case f5
 
-    /// The macOS virtual key code, where the key produces one (fn and Right ⌘
-    /// are observed through flag changes but still carry a key code).
+    /// The macOS virtual key code, where the key produces one (modifiers are
+    /// observed through flag changes but still carry a key code).
     public var keyCode: UInt16 {
         switch self {
-        case .section: return 0x0A       // kVK_ISO_Section
+        case .rightControl: return 0x3E  // kVK_RightControl (62)
         case .rightCommand: return 0x36  // kVK_RightCommand
         case .fn: return 0x3F            // kVK_Function
+        case .section: return 0x0A       // kVK_ISO_Section
         case .f5: return 0x60            // kVK_F5
         }
     }
 
     /// True when the key is really a modifier, so the tap watches flagsChanged
-    /// rather than keyDown/keyUp.
+    /// rather than keyDown/keyUp. Modifier hotkeys survive secure input.
     public var isModifierKey: Bool {
-        self == .rightCommand || self == .fn
+        self == .rightControl || self == .rightCommand || self == .fn
     }
 
     public var display: String {
         switch self {
-        case .section: return "§"
+        case .rightControl: return "Right Control"
         case .rightCommand: return "Right Command"
         case .fn: return "fn"
+        case .section: return "§"
         case .f5: return "F5"
         }
     }

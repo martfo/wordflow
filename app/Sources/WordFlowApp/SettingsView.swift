@@ -45,7 +45,7 @@ private struct GeneralSettings: View {
             Text("Hold the hotkey and speak. Double-tap to lock hands-free; press Esc to cancel.")
                 .font(.footnote).foregroundStyle(.secondary)
 
-            Toggle("Pause the hotkey (so § types normally)", isOn: $model.paused)
+            Toggle("Pause the hotkey (so it types normally)", isOn: $model.paused)
             Toggle("Launch at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, on in
                     do { on ? try SMAppService.mainApp.register() : try SMAppService.mainApp.unregister() }
