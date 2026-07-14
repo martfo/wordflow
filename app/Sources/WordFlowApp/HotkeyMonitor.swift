@@ -53,6 +53,7 @@ final class HotkeyMonitor {
                 return monitor.handle(type: type, event: event)
             },
             userInfo: refcon) else {
+            wfLog("tapCreate FAILED (returned nil) — accessibility not effective for tap creation")
             return false
         }
         self.tap = tap
@@ -60,6 +61,7 @@ final class HotkeyMonitor {
         self.runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        wfLog("tap created; isEnabled=\(CGEvent.tapIsEnabled(tap: tap)); hotkey=\(kind.rawValue) keyCode=\(kind.keyCode)")
         return true
     }
 
@@ -81,11 +83,15 @@ final class HotkeyMonitor {
         MainActor.assumeIsolated {
             // The system disables the tap after a slow callback; re-enable it.
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                wfLog("tap disabled (type \(type.rawValue)); re-enabling")
                 if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
                 return Unmanaged.passUnretained(event)
             }
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             let flags = event.flags
+            if keyCode == kind.keyCode || keyCode == escapeKeyCode {
+                wfLog("event type=\(type.rawValue) keyCode=\(keyCode) (hotkey keyCode=\(kind.keyCode))")
+            }
 
             // Esc while recording cancels; swallow it only then.
             if type == .keyDown, keyCode == escapeKeyCode {

@@ -111,22 +111,31 @@ final class DictationController: ObservableObject {
     /// flag it, optionally trigger the system grant dialog, and poll so the
     /// hotkey turns on by itself the moment the user flips the switch.
     private func ensureHotkeyEnabled(promptIfNeeded: Bool) {
-        if monitor.enable() {
+        let trusted = Accessibility.isTrusted
+        wfLog("ensureHotkeyEnabled: AXIsProcessTrusted=\(trusted), promptIfNeeded=\(promptIfNeeded)")
+        if trusted, monitor.enable() {
             needsAccessibility = false
             hotkeyActive = true
             accessibilityPoll?.invalidate()
             return
         }
         hotkeyActive = false
-        needsAccessibility = true
-        messageClear?.cancel()
-        statusMessage = "WordFlow needs Accessibility access for the hotkey. Use “Open Accessibility Settings” below."
-        if promptIfNeeded { Accessibility.prompt() }
+        needsAccessibility = !trusted
+        if !trusted {
+            messageClear?.cancel()
+            statusMessage = "WordFlow needs Accessibility access for the hotkey. Use “Open Accessibility Settings” below."
+            if promptIfNeeded { Accessibility.prompt() }
+        } else {
+            wfLog("trusted but monitor.enable() failed; retrying")
+        }
+        // Retry until the tap is live, tearing down any dead tap first so a tap
+        // created before the grant took effect is replaced by a fresh one.
         accessibilityPoll?.invalidate()
         accessibilityPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 guard Accessibility.isTrusted else { return }
+                self.monitor.disable()
                 self.monitor.setHotkey(self.hotkey)
                 if self.monitor.enable() {
                     self.needsAccessibility = false
