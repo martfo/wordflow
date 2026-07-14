@@ -1,12 +1,12 @@
-// The global hotkey as a CGEventTap. Unlike Polenta's Carbon chord, the default
-// key (§) is a plain key with no modifier, so it must be swallowed while
-// dictation is active or it would type a character. An active tap can consume
-// events; it needs the Accessibility permission. Returning nil from the callback
-// swallows the event, returning it passes it through.
+// The global hotkey as a CGEventTap on keyDown, keyUp, and flagsChanged.
 //
-// Restoring normal typing needs nothing: the key is only ever swallowed by this
-// live tap, so pausing (disable), quitting, or a crash returns § to normal at
-// once (AC-1.1-c).
+// The default trigger is a modifier (Right Control), observed through
+// flagsChanged: macOS secure input suppresses character key events to taps but
+// still delivers modifier events, so a modifier hotkey keeps working while
+// another app holds secure input (a character key like § would go dead then).
+// Modifiers are passed through, not swallowed. A character-key hotkey (§, F5) is
+// still supported and is swallowed while active so it never types; it works only
+// when secure input is off. The tap needs the Accessibility permission.
 
 import AppKit
 import CoreGraphics
@@ -90,9 +90,6 @@ final class HotkeyMonitor {
             }
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             let flags = event.flags
-            if keyCode == kind.keyCode || keyCode == escapeKeyCode {
-                wfLog("event type=\(type.rawValue) keyCode=\(keyCode) (hotkey keyCode=\(kind.keyCode))")
-            }
 
             // Esc while recording cancels; swallow it only then.
             if type == .keyDown, keyCode == escapeKeyCode {
