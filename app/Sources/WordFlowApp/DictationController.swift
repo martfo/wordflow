@@ -29,7 +29,7 @@ final class DictationController: ObservableObject {
     var isRecording: Bool { pill == .starting || pill == .listening || pill == .locked }
 
     private let stateMachine = HotkeyStateMachine()
-    private let monitor = HotkeyMonitor()
+    private let monitor = CarbonHotkeyMonitor()
     private let capture = MicCapture()
     private let inserter = TextInserter()
     private let client: BackendClient
@@ -52,7 +52,6 @@ final class DictationController: ObservableObject {
         self.client = client
         self.microphones = microphones
         monitor.onEvent = { [weak self] event in self?.feed(event) }
-        monitor.isRecording = { [weak self] in self?.isRecording ?? false }
     }
 
     // MARK: - Lifecycle
@@ -111,40 +110,16 @@ final class DictationController: ObservableObject {
     /// flag it, optionally trigger the system grant dialog, and poll so the
     /// hotkey turns on by itself the moment the user flips the switch.
     private func ensureHotkeyEnabled(promptIfNeeded: Bool) {
-        let trusted = Accessibility.isTrusted
-        wfLog("ensureHotkeyEnabled: AXIsProcessTrusted=\(trusted), promptIfNeeded=\(promptIfNeeded)")
-        if trusted, monitor.enable() {
+        // The Carbon system hotkey needs no Accessibility and is not blocked by
+        // secure input. Accessibility is still needed to *insert* text at the
+        // cursor, so we prompt for it, but the hotkey itself works regardless.
+        hotkeyActive = monitor.enable()
+        wfLog("ensureHotkeyEnabled: carbon registered=\(hotkeyActive), trusted=\(Accessibility.isTrusted)")
+        if Accessibility.isTrusted {
             needsAccessibility = false
-            hotkeyActive = true
-            accessibilityPoll?.invalidate()
-            return
-        }
-        hotkeyActive = false
-        needsAccessibility = !trusted
-        if !trusted {
-            messageClear?.cancel()
-            statusMessage = "WordFlow needs Accessibility access for the hotkey. Use “Open Accessibility Settings” below."
-            if promptIfNeeded { Accessibility.prompt() }
         } else {
-            wfLog("trusted but monitor.enable() failed; retrying")
-        }
-        // Retry until the tap is live, tearing down any dead tap first so a tap
-        // created before the grant took effect is replaced by a fresh one.
-        accessibilityPoll?.invalidate()
-        accessibilityPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                guard Accessibility.isTrusted else { return }
-                self.monitor.disable()
-                self.monitor.setHotkey(self.hotkey)
-                if self.monitor.enable() {
-                    self.needsAccessibility = false
-                    self.hotkeyActive = true
-                    self.accessibilityPoll?.invalidate()
-                    self.statusMessage = nil
-                    self.flash("Accessibility is on. Hold \(self.hotkey.display) to dictate.")
-                }
-            }
+            needsAccessibility = true
+            if promptIfNeeded { Accessibility.prompt() }
         }
     }
 
@@ -188,6 +163,7 @@ final class DictationController: ObservableObject {
 
     private func beginCapture() {
         guard !capture.isCapturing else { return }
+        monitor.beginEscCapture()
         pill = .starting
         wasLockedAtStop = false
         Task {
@@ -215,6 +191,7 @@ final class DictationController: ObservableObject {
     }
 
     private func finishAndTranscribe() {
+        monitor.endEscCapture()
         wasLockedAtStop = stateMachine.isLocked
         let target = inserter.frontmostTarget()
         let sequence = insertionQueue.submit()
@@ -251,6 +228,7 @@ final class DictationController: ObservableObject {
 
     private func discard() {
         // A sub-500 ms tap with no speech: discard silently, no notice (AC-1.2-a).
+        monitor.endEscCapture()
         Task {
             await capture.cancel()
             if inFlight == 0 { pill = .hidden }
@@ -259,6 +237,7 @@ final class DictationController: ObservableObject {
 
     private func cancel() {
         pendingTapTick?.cancel()
+        monitor.endEscCapture()
         Task {
             await capture.cancel()
             pill = inFlight > 0 ? .processing : .hidden
