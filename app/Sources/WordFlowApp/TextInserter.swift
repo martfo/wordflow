@@ -56,10 +56,15 @@ final class TextInserter {
     }
 
     func insert(_ rawText: String) -> InsertionOutcome {
+        // Refuse only when the *focused* field is genuinely secure — not merely
+        // because some background app has session-wide secure input on. The
+        // global IsSecureEventInputEnabled() flag is true whenever any app holds
+        // secure input, so using it here wrongly blocked insertion into ordinary
+        // fields (this is why Wispr Flow inserted and WordFlow did not).
         let route = InsertionText.plan(
             text: rawText,
             hasFocusedField: hasFocusedTextField(),
-            isSecureInput: isSecureInputActive())
+            isSecureInput: isFocusedFieldSecure())
         switch route {
         case .nothing:
             return .nothing
@@ -94,6 +99,17 @@ final class TextInserter {
         // means we can paste at the caret. Only when nothing at all is focused
         // do we fall back to leaving the text on the clipboard (AC-4.3).
         focusedElement() != nil
+    }
+
+    /// Whether the focused element is an actual password/secure field, checked
+    /// via its accessibility subrole — the correct, field-specific test, unlike
+    /// the session-wide secure-input flag.
+    private func isFocusedFieldSecure() -> Bool {
+        guard let element = focusedElement() else { return false }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &value) == .success,
+              let subrole = value as? String else { return false }
+        return subrole == (kAXSecureTextFieldSubrole as String)
     }
 
     // MARK: - Clipboard

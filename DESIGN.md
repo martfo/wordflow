@@ -131,10 +131,12 @@ active so it never types a character.
 - **Configurable** (AC-1.5): the hotkey is stored in `UserDefaults`
   (`hotkeyKeyCode`, `hotkeyKind`) and can be set to §, Right ⌘, fn (Globe), or F5. A change
   takes effect immediately by rebuilding the tap; the choice persists across restarts.
-- **Secure input** (AC-4.4): when `IsSecureEventInputEnabled()` is true, macOS suppresses the
-  tap's key events entirely, so the hotkey cannot fire. A one-second poll detects secure input,
-  the pill/menu bar says plainly that dictation is unavailable and why, and normal service
-  resumes automatically when secure input ends. Nothing is ever injected into a secure field.
+- **Secure input** (AC-4.4): `IsSecureEventInputEnabled()` is a *session-wide* flag — true
+  whenever any app (even a background one) holds secure input — so it must NOT be used to gate
+  insertion or to declare the hotkey dead; doing so wrongly blocks dictation into ordinary
+  fields while some other app has a password box open. Instead, insertion refuses only when the
+  *focused* element's accessibility subrole is `kAXSecureTextFieldSubrole` (a genuine password
+  field). Nothing is ever injected into a secure field.
 
 ### The press state machine (`HotkeyStateMachine`, in WordFlowCore, clock-injected, unit-tested)
 

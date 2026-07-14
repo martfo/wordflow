@@ -67,7 +67,6 @@ final class DictationController: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.level = $0 }
             .store(in: &cancellables)
-        startSecureInputPolling()
     }
 
     /// Clicking the pill cancels, the same as Esc (AC-8.2-a).
