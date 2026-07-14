@@ -56,7 +56,7 @@ final class TextInserter {
     }
 
     func insert(_ rawText: String) -> InsertionOutcome {
-        // Refuse only when the *focused* field is genuinely secure — not merely
+        // Refuse only when the *focused* field is genuinely secure, not merely
         // because some background app has session-wide secure input on. The
         // global IsSecureEventInputEnabled() flag is true whenever any app holds
         // secure input, so using it here wrongly blocked insertion into ordinary
@@ -102,7 +102,7 @@ final class TextInserter {
     }
 
     /// Whether the focused element is an actual password/secure field, checked
-    /// via its accessibility subrole — the correct, field-specific test, unlike
+    /// via its accessibility subrole, the correct, field-specific test, unlike
     /// the session-wide secure-input flag.
     private func isFocusedFieldSecure() -> Bool {
         guard let element = focusedElement() else { return false }

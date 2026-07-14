@@ -49,8 +49,10 @@ final class AppModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        let defaultKind = Hotkey.defaultKind(hasSectionKey: KeyboardLayout.hasSectionKey())
-        let kind = HotkeyPreference(store: UserDefaults.standard).restore(defaultKind: defaultKind)
+        // Right Control by default: a modifier, so it works even while another
+        // app holds macOS secure input (which suppresses character keys like §
+        // but not modifier events). The user can pick another key in Settings.
+        let kind = HotkeyPreference(store: UserDefaults.standard).restore(defaultKind: .rightControl)
         self.hotkeyKind = kind
 
         let config = AppSetup.ensure()

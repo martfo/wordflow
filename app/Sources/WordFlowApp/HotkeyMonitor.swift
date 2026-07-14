@@ -27,6 +27,7 @@ final class HotkeyMonitor {
 
     private let escapeKeyCode: UInt16 = 0x35
     // Device-dependent modifier bits carried in the raw event flags.
+    private let rightControlMask: UInt64 = 0x2000
     private let rightCommandMask: UInt64 = 0x10
     private let fnMask: UInt64 = 0x800000
 
@@ -53,7 +54,7 @@ final class HotkeyMonitor {
                 return monitor.handle(type: type, event: event)
             },
             userInfo: refcon) else {
-            wfLog("tapCreate FAILED (returned nil) — accessibility not effective for tap creation")
+            wfLog("tapCreate FAILED (returned nil): accessibility not effective for tap creation")
             return false
         }
         self.tap = tap
@@ -128,6 +129,7 @@ final class HotkeyMonitor {
 
     private func isModifierDown(_ flags: CGEventFlags) -> Bool {
         switch kind {
+        case .rightControl: return flags.rawValue & rightControlMask != 0
         case .rightCommand: return flags.rawValue & rightCommandMask != 0
         case .fn: return flags.rawValue & fnMask != 0
         default: return false

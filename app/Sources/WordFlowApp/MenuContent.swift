@@ -72,6 +72,6 @@ struct MenuContent: View {
             return "Hotkey: hold \(model.hotkeyKind.display) (ready)"
         }
         let access = Accessibility.isTrusted ? "Accessibility on" : "Accessibility off"
-        return "Hotkey \(model.hotkeyKind.display): not active — \(access). Use Dictate above."
+        return "Hotkey \(model.hotkeyKind.display): not active. \(access). Use Dictate above."
     }
 }
