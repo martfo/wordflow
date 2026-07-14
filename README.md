@@ -6,6 +6,7 @@
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776ab)
 ![Latest release](https://img.shields.io/github/v/release/martfo/wordflow)
 ![100% local](https://img.shields.io/badge/runtime-100%25%20local-brightgreen)
+![License: GPL v3](https://img.shields.io/github/license/martfo/wordflow)
 
 A fully local, Wispr Flow-style dictation utility for macOS. Hold Right Control,
 speak, release, and cleaned English text appears at the cursor of whatever app
@@ -91,3 +92,16 @@ uv run --with sounddevice --with numpy python backend/scripts/record_fixtures.py
 
 WordFlow uses port 8770 and its own Application Support folder, distinct from
 Polenta's 8765 and its vault, so both apps run at the same time.
+
+## License
+
+WordFlow is free software, released under the **GNU General Public License v3.0
+or later** (see [LICENSE](LICENSE)). Copyright (C) 2026 Martin
+([github.com/martfo](https://github.com/martfo)).
+
+It bundles third-party language resources under their own terms: the
+American-to-British map is derived from the VarCon dataset (see
+`backend/wordflow/resources/NOTICE-VarCon.txt`), and the en_GB spelling
+dictionary is the SCOWL/Hunspell `en_GB` data (see
+`backend/wordflow/resources/dict/`), both redistributable and compatible with
+the GPL.
