@@ -104,10 +104,20 @@ Copied from Polenta's proven mechanism (its AC-3.1-e), adapted to the WordFlow l
 
 ## The hotkey: CGEventTap, the § key, and its state machine
 
-The hotkey is the highest-risk subsystem. It is a `CGEventTap`, not Carbon's
-`RegisterEventHotKey` (which Polenta uses for a modifier chord). A tap is required because the
-default key, §, is a plain key with no modifier, and it must be *swallowed* while dictation is
-active so it never types a character.
+The hotkey is the highest-risk subsystem. It is a `CGEventTap` on keyDown, keyUp, and
+flagsChanged, not Carbon's `RegisterEventHotKey` (which cannot register a bare key or a lone
+modifier).
+
+**The default trigger is Right Control (a modifier), not §.** Hardware testing found that when
+another app holds macOS secure input — which happens often and can get stuck on a dead process
+— the system suppresses *character* key events (§, letters) from event taps but still delivers
+*modifier* flagsChanged events. A character-key hotkey therefore goes silently dead whenever
+any app has a password box open, while a modifier hotkey keeps working. (This is why Wispr
+Flow's Fn key works in that state and a § key would not.) So the default is **hold Right
+Control** to talk, detected via flagsChanged (right-control device mask `0x2000`); §, F5, Right
+⌘, and fn remain selectable in Settings, with § only usable while secure input is off. A
+character-key hotkey is still swallowed while active so it never types; a modifier hotkey is
+passed through (holding it alone does nothing else).
 
 - **Tap**: an active (not listen-only) `CGEventTap` at `kCGSessionEventTapLocation`, on
   `keyDown`, `keyUp`, and `flagsChanged`. Active taps that consume events need the
