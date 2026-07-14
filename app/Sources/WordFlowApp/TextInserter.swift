@@ -35,6 +35,26 @@ final class TextInserter {
         IsSecureEventInputEnabled()
     }
 
+    /// The name of the app currently holding secure input, if any, so the user
+    /// can see what is blocking dictation rather than guessing. Reads the PID
+    /// from the IO registry; only called on the error path, so its cost is fine.
+    func secureInputHolder() -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
+        process.arguments = ["-l", "-w", "0"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard let output = String(data: data, encoding: .utf8),
+              let range = output.range(of: "\"kCGSSessionSecureInputPID\"=") else { return nil }
+        let digits = output[range.upperBound...].prefix { $0.isNumber }
+        guard let pid = Int32(digits), pid > 0 else { return nil }
+        return NSRunningApplication(processIdentifier: pid)?.localizedName
+    }
+
     func insert(_ rawText: String) -> InsertionOutcome {
         let route = InsertionText.plan(
             text: rawText,

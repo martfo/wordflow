@@ -275,7 +275,10 @@ final class DictationController: ObservableObject {
         switch outcome {
         case .inserted: lastInsertNotice = "Inserted"
         case .clipboard: lastInsertNotice = "No text field focused, so it is on the clipboard."
-        case .refusedSecureField: lastInsertNotice = "A password field is focused, so nothing was inserted. It is in History."
+        case .refusedSecureField:
+            let who = inserter.secureInputHolder().map { "\($0) has secure input on" }
+                ?? "an app has secure input on"
+            lastInsertNotice = "Blocked: \(who), which also disables the hotkey. Quit that app or use another field. Text is in History."
         case .nothing: lastInsertNotice = nil
         }
     }
@@ -291,7 +294,9 @@ final class DictationController: ObservableObject {
                 if active != self.secureInputActive {
                     self.secureInputActive = active
                     if active {
-                        self.flash("A password field is active, so dictation is paused. It resumes on its own.")
+                        let who = self.inserter.secureInputHolder().map { "\($0) has secure input on" }
+                            ?? "an app has secure input on"
+                        self.flash("\(who), so the hotkey is blocked until you quit it or move away from it.")
                     }
                 }
             }
