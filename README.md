@@ -1,6 +1,13 @@
 # WordFlow
 
-A fully local, Wispr Flow-style dictation utility for macOS. Hold the § key,
+![Platform: macOS 14.4+](https://img.shields.io/badge/platform-macOS%2014.4%2B-blue)
+![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-required-black)
+![Swift 5](https://img.shields.io/badge/Swift-5-orange)
+![Python 3.11](https://img.shields.io/badge/Python-3.11-3776ab)
+![Latest release](https://img.shields.io/github/v/release/martfo/wordflow)
+![100% local](https://img.shields.io/badge/runtime-100%25%20local-brightgreen)
+
+A fully local, Wispr Flow-style dictation utility for macOS. Hold Right Control,
 speak, release, and cleaned English text appears at the cursor of whatever app
 you are in, in under two seconds. Nothing leaves the machine. WordFlow is the
 sibling of Polenta Meeting Notes: same architecture, same British-English
@@ -42,8 +49,11 @@ On first launch the app provisions its own Python backend into
 `~/Library/Application Support/WordFlow/runtime` (from the bundled `uv`, no
 system Python needed) and, if the speech models are not already in the Hugging
 Face cache, downloads them once. After that it runs fully offline. Grant
-**Microphone** and **Accessibility** when asked — Accessibility is what lets the
-§ hotkey and text insertion work.
+**Microphone** and **Accessibility** when asked (Accessibility is what lets the
+hotkey and text insertion work). Then hold **Right Control** and speak; double-tap
+it to lock hands-free. Right Control is the default because, unlike a character
+key such as §, a modifier keeps working even while another app has macOS secure
+input on; § and other keys are selectable in Settings.
 
 `make dmg` signs ad-hoc by default (no certificate needed). For permissions that
 survive rebuilds without re-prompting, create a stable local identity once with
