@@ -68,6 +68,9 @@ struct MenuContent: View {
 
     /// A plain diagnostic so the hotkey state is visible at a glance.
     private var hotkeyStatus: String {
+        if controller.secureInputActive {
+            return "Hotkey blocked: another app has secure input on (a password-style field). Quit or leave it."
+        }
         if controller.hotkeyActive {
             return "Hotkey: hold \(model.hotkeyKind.display) (ready)"
         }
