@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from pathlib import Path
+
 from wordflow.accuracy import harness
-from wordflow.api.service import cleanup_toggles, run_dictation
+from wordflow.api.service import cleanup_toggles, retranscribe, run_dictation
 from wordflow.asr.audio import decode_wav_base64
 from wordflow.asr.manager import ModelManager
 from wordflow.cleanup.pipeline import Pipeline
@@ -68,6 +70,10 @@ class FillersRequest(BaseModel):
 
 class ModelRequest(BaseModel):
     name: str
+
+
+class RetranscribeRequest(BaseModel):
+    model: str | None = None
 
 
 class BakeoffRequest(BaseModel):
@@ -145,6 +151,34 @@ def create_app(state: AppState) -> FastAPI:
         )
         conn.commit()
         return {"inserted": request.inserted}
+
+    def _do_retranscribe(row: dict, model: str | None) -> dict:
+        if not row.get("audio_path") or not Path(row["audio_path"]).exists():
+            raise HTTPException(409, "no kept audio for this dictation to re-transcribe")
+        outcome = retranscribe(
+            conn=conn, data=data, manager=state.manager,
+            pipeline=Pipeline(state.pipeline.stages, cleanup_toggles(conn, config)),
+            row=row, model=model)
+        return {"dictation_id": outcome.dictation_id, "raw": outcome.raw,
+                "text": outcome.text, "model": model or state.manager.active_model,
+                "nothing_heard": outcome.nothing_heard}
+
+    @app.post("/history/retranscribe-last")
+    def retranscribe_last(request: RetranscribeRequest) -> dict:
+        """Re-run the most recent kept dictation, the recovery action for a
+        result that came out wrong."""
+        row = history.latest_with_audio(conn)
+        if row is None:
+            raise HTTPException(409, "no kept audio to re-transcribe (turn on keep audio first)")
+        return _do_retranscribe(row, request.model)
+
+    @app.post("/history/{dictation_id}/retranscribe")
+    def retranscribe_one(dictation_id: int, request: RetranscribeRequest) -> dict:
+        try:
+            row = history.get_dictation(conn, dictation_id)
+        except KeyError:
+            raise HTTPException(404, "no such dictation")
+        return _do_retranscribe(row, request.model)
 
     @app.post("/history/{dictation_id}/correct")
     def correct_history(dictation_id: int, request: CorrectRequest) -> dict:

@@ -34,6 +34,7 @@ struct SettingsView: View {
 private struct GeneralSettings: View {
     @EnvironmentObject var model: AppModel
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var keepAudio = false
 
     var body: some View {
         Form {
@@ -51,7 +52,15 @@ private struct GeneralSettings: View {
                     do { on ? try SMAppService.mainApp.register() : try SMAppService.mainApp.unregister() }
                     catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
                 }
+
+            Toggle("Keep the last few recordings (for recovery)", isOn: $keepAudio)
+                .onChange(of: keepAudio) { _, on in
+                    Task { try? await model.client.setKeepAudio(on) }
+                }
+            Text("Keeps audio for the last five dictations so a wrong result can be re-transcribed from the menu. Off by default; nothing else is ever kept on disk.")
+                .font(.footnote).foregroundStyle(.secondary)
         }
+        .task { keepAudio = (try? await model.client.keepAudio()) ?? false }
     }
 }
 

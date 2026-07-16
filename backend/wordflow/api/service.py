@@ -18,6 +18,10 @@ from wordflow.storage.paths import DataFolder
 
 log = logging.getLogger("wordflow")
 
+# When keep-audio is on, retain audio for only the most recent few dictations,
+# as a recovery safety net rather than an indefinite archive.
+KEEP_AUDIO_LAST = 5
+
 
 @dataclass
 class DictationOutcome:
@@ -81,9 +85,34 @@ def run_dictation(
         conn, model=manager.active_model, raw_text=raw, cleaned_text=result.text,
         target_app=target_app, target_bundle_id=target_bundle_id, audio_path=audio_path,
     )
+    if audio_path:
+        history.prune_kept_audio(conn, KEEP_AUDIO_LAST)
     return DictationOutcome(
         dictation_id=dictation_id, raw=raw, text=result.text,
         nothing_heard=False, flags=result.flags,
+    )
+
+
+def retranscribe(
+    *, conn, data: DataFolder, manager: ModelManager, pipeline: Pipeline,
+    row: dict, model: str | None = None,
+) -> DictationOutcome:
+    """Re-run a kept dictation's audio, optionally on a different model (e.g.
+    Whisper), update its history entry, and return the new text."""
+    from wordflow.asr.audio import decode_wav_file
+
+    samples, rate = decode_wav_file(row["audio_path"])
+    name = model or manager.active_model
+    raw = manager.transcribe_on(name, samples, rate).strip()
+    result = pipeline.run(raw, build_context(data))
+    conn.execute(
+        "UPDATE dictations SET raw_text = ?, cleaned_text = ?, char_count = ?, model = ? WHERE id = ?",
+        (raw, result.text, len(result.text), name, row["id"]),
+    )
+    conn.commit()
+    return DictationOutcome(
+        dictation_id=row["id"], raw=raw, text=result.text,
+        nothing_heard=not raw, flags=result.flags,
     )
 
 

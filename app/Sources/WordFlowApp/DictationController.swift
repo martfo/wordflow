@@ -142,6 +142,29 @@ final class DictationController: ObservableObject {
         Accessibility.openSettings()
     }
 
+    /// Recovery: re-run the last dictation's kept audio (optionally on Whisper)
+    /// and put the result on the clipboard, so a wrong transcription can be
+    /// recovered rather than lost.
+    func reTranscribeLast(model: String?) {
+        flash("Re-transcribing the last dictation…")
+        Task {
+            do {
+                let result = try await client.retranscribeLast(model: model)
+                let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else {
+                    flash("No speech found in the last recording.")
+                    return
+                }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                let via = model.map { " with \($0 == "whisper" ? "Whisper" : $0)" } ?? ""
+                flash("Re-transcribed\(via) and copied to the clipboard. Paste with Cmd-V.")
+            } catch {
+                flash("Nothing to re-transcribe. Turn on “Keep recent audio” in Settings first.")
+            }
+        }
+    }
+
     // MARK: - Event handling
 
     private func feed(_ event: HotkeyEvent) {

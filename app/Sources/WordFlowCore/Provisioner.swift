@@ -38,7 +38,10 @@ public enum RuntimeLocation {
 /// package reinstalls.
 /// 1: the initial WordFlow backend (FastAPI, MLX speech models, cleanup,
 ///    dictionary, history).
-public let runtimeVersion = "1"
+/// 2: audio level normalisation, ffmpeg-free Parakeet with a long-audio chunking
+///    safety valve, single-thread model executor, and the keep-recent-audio
+///    recovery path (re-transcribe last, prune to the last few).
+public let runtimeVersion = "2"
 
 public protocol RuntimeInstalling {
     /// Fetch the standalone CPython build for Apple Silicon.

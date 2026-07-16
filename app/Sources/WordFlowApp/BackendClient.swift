@@ -143,6 +143,25 @@ final class BackendClient: @unchecked Sendable {
         try await get("/accuracy")
     }
 
+    struct RetranscribeResult: Codable { let text: String; let dictation_id: Int?; let nothing_heard: Bool? }
+
+    /// Re-run the most recent kept dictation's audio, optionally on another model.
+    func retranscribeLast(model: String?) async throws -> RetranscribeResult {
+        struct Payload: Encodable { let model: String? }
+        return try await send("POST", "/history/retranscribe-last", body: Payload(model: model))
+    }
+
+    func keepAudio() async throws -> Bool {
+        struct Response: Codable { let keep_audio: Bool }
+        let response: Response = try await get("/settings")
+        return response.keep_audio
+    }
+
+    func setKeepAudio(_ on: Bool) async throws {
+        struct Payload: Encodable { let key: String; let value: Bool }
+        _ = try await sendVoid("PUT", "/settings", body: Payload(key: "keep_audio", value: on))
+    }
+
     func cleanupToggles() async throws -> [String: Bool] {
         try await get("/cleanup")
     }
