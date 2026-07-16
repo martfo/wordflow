@@ -62,6 +62,43 @@ def test_ac_6_4_b_kept_audio_removed_with_entry(conn, data, tmp_path):
     assert not audio.exists()
 
 
+def test_prune_kept_audio_keeps_only_last_n(conn, tmp_path):
+    files = []
+    for i in range(7):
+        f = tmp_path / f"{i}.wav"
+        f.write_bytes(b"RIFFfake")
+        files.append(f)
+        history.create_dictation(conn, model="parakeet", raw_text="x", cleaned_text="y",
+                                 audio_path=str(f))
+    pruned = history.prune_kept_audio(conn, keep=5)
+    assert pruned == 2
+    # The two oldest audio files are gone and their paths cleared; the newest 5 remain.
+    kept = [r for r in history.list_dictations(conn) if r["audio_path"]]
+    assert len(kept) == 5
+    assert not files[0].exists() and not files[1].exists()
+    assert files[6].exists()
+    assert history.latest_with_audio(conn)["audio_path"] == str(files[6])
+
+
+def test_retranscribe_last_recovers_from_kept_audio(client):
+    """The recovery path: keep audio on, then re-run the last dictation's audio
+    and get the (fake engine's) transcript back, updating the entry."""
+    import numpy as np
+    from tests.conftest import make_wav_base64
+
+    client.put("/settings", json={"key": "keep_audio", "value": True})
+    audio = make_wav_base64(np.random.default_rng(0).uniform(-0.3, 0.3, 16_000).astype(np.float32))
+    did = client.post("/transcribe", json={"audio_base64": audio}).json()["dictation_id"]
+
+    body = client.post("/history/retranscribe-last", json={}).json()
+    assert body["dictation_id"] == did
+    assert body["text"] == "Hello world"
+
+    # With keep-audio off there is nothing to recover.
+    fresh = client.post("/history/999/retranscribe", json={})
+    assert fresh.status_code == 404
+
+
 def test_ac_6_5_a_delete_and_clear(conn):
     a = history.create_dictation(conn, model="parakeet", raw_text="1", cleaned_text="one")
     history.create_dictation(conn, model="parakeet", raw_text="2", cleaned_text="two")

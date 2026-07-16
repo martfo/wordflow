@@ -16,10 +16,8 @@ SILENCE_RMS = 0.006
 MIN_SPEECH_SECONDS = 0.15
 
 
-def decode_wav_base64(data_base64: str) -> tuple[np.ndarray, int]:
-    """Return float32 mono samples in [-1, 1] and the sample rate."""
-    raw = base64.b64decode(data_base64)
-    with wave.open(io.BytesIO(raw), "rb") as w:
+def _decode_wav(reader) -> tuple[np.ndarray, int]:
+    with wave.open(reader, "rb") as w:
         rate = w.getframerate()
         channels = w.getnchannels()
         width = w.getsampwidth()
@@ -30,6 +28,16 @@ def decode_wav_base64(data_base64: str) -> tuple[np.ndarray, int]:
     if channels > 1:
         samples = samples.reshape(-1, channels).mean(axis=1)
     return samples, rate
+
+
+def decode_wav_base64(data_base64: str) -> tuple[np.ndarray, int]:
+    """Return float32 mono samples in [-1, 1] and the sample rate."""
+    return _decode_wav(io.BytesIO(base64.b64decode(data_base64)))
+
+
+def decode_wav_file(path) -> tuple[np.ndarray, int]:
+    """Decode a kept dictation WAV from disk, for re-transcription."""
+    return _decode_wav(str(path))
 
 
 def rms(samples: np.ndarray) -> float:

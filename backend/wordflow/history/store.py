@@ -70,6 +70,30 @@ def delete_dictation(conn: sqlite3.Connection, dictation_id: int) -> None:
     conn.commit()
 
 
+def prune_kept_audio(conn: sqlite3.Connection, keep: int) -> int:
+    """Keep audio for only the most recent `keep` dictations that have it, so the
+    recovery safety net does not hoard every recording. Older kept audio is
+    deleted and its path cleared. Returns how many were pruned."""
+    rows = conn.execute(
+        "SELECT id, audio_path FROM dictations WHERE audio_path IS NOT NULL ORDER BY id DESC"
+    ).fetchall()
+    pruned = 0
+    for row in rows[keep:]:
+        Path(row["audio_path"]).unlink(missing_ok=True)
+        conn.execute("UPDATE dictations SET audio_path = NULL WHERE id = ?", (row["id"],))
+        pruned += 1
+    if pruned:
+        conn.commit()
+    return pruned
+
+
+def latest_with_audio(conn: sqlite3.Connection) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM dictations WHERE audio_path IS NOT NULL ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def clear_all(conn: sqlite3.Connection) -> int:
     rows = conn.execute("SELECT audio_path FROM dictations WHERE audio_path IS NOT NULL").fetchall()
     for row in rows:

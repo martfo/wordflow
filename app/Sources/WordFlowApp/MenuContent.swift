@@ -26,6 +26,11 @@ struct MenuContent: View {
         }
         .keyboardShortcut("d")
 
+        Menu("Recover last dictation") {
+            Button("Re-transcribe (copies to clipboard)") { controller.reTranscribeLast(model: nil) }
+            Button("Re-transcribe with Whisper") { controller.reTranscribeLast(model: "whisper") }
+        }
+
         Text(hotkeyStatus)
 
         Menu("Model") {
