@@ -60,6 +60,14 @@ final class BakeoffModel: ObservableObject {
     func loadRuns(client: BackendClient) async {
         runs = (try? await client.accuracyRuns()) ?? runs
     }
+
+    /// Release the microphone if a recording is still in progress — e.g. the
+    /// Settings window was closed mid-record, which would otherwise leave the
+    /// mic (and its indicator) on.
+    func stopIfRecording() {
+        guard phase == .recording else { return }
+        Task { await capture.cancel(); phase = .idle }
+    }
 }
 
 struct ModelSettingsView: View {
@@ -89,6 +97,7 @@ struct ModelSettingsView: View {
             .padding(4)
         }
         .task { await bakeoff.loadRuns(client: model.client) }
+        .background(WindowCloseObserver { bakeoff.stopIfRecording() })
     }
 
     private var bakeoffSection: some View {
