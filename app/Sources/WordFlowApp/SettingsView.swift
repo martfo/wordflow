@@ -84,6 +84,10 @@ private struct MicrophoneSettings: View {
         }
         .onAppear { model.microphones.refresh(); restartMeter() }
         .onDisappear { meter.stop() }
+        // Closing the Settings window does not reliably fire `.onDisappear`, so
+        // stop the meter on the window's own close notification too — otherwise
+        // the microphone (and its menu-bar indicator) would stay on for good.
+        .background(WindowCloseObserver { meter.stop() })
     }
 
     private func restartMeter() {
