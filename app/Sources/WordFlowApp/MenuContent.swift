@@ -54,17 +54,27 @@ struct MenuContent: View {
         }
 
         Divider()
-        Button("Settings…") {
-            model.settingsTab = .general
-            openSettings()
-        }
-        Button("History…") {
-            model.settingsTab = .dictationData
-            openSettings()
-        }
+        Button("Settings…") { showSettings(.general) }
+        Button("History…") { showSettings(.dictationData) }
         Divider()
         Button("Quit WordFlow") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
+    }
+
+    /// Open Settings on a given tab. `openSettings` alone does not bring a
+    /// menu-bar-only (accessory) app to the front, so the window opens behind
+    /// other apps and looks like nothing happened. Activate WordFlow and order
+    /// the settings window front once SwiftUI has created it.
+    private func showSettings(_ tab: AppModel.SettingsTab) {
+        model.settingsTab = tab
+        openSettings()
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async {
+            for window in NSApp.windows
+            where window.frameAutosaveName == "com_apple_SwiftUI_Settings_window" {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
     }
 
     private func displayName(_ name: String) -> String {
