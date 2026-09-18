@@ -9,9 +9,12 @@ let package = Package(
             name: "WordFlowCore",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // Objective-C so it can @try/@catch the NSExceptions AVAudioEngine
+        // raises; Swift cannot, and an uncaught one aborts the app.
+        .target(name: "WordFlowObjCSupport"),
         .executableTarget(
             name: "WordFlowApp",
-            dependencies: ["WordFlowCore"],
+            dependencies: ["WordFlowCore", "WordFlowObjCSupport"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
