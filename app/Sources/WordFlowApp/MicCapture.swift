@@ -9,6 +9,7 @@ import AVFoundation
 import CoreAudio
 import Foundation
 import WordFlowCore
+import WordFlowObjCSupport
 
 /// A short tail kept recording after the key is released, so the last word is
 /// not cut off mid-syllable. File-scoped so the nonisolated capture callback can
@@ -74,7 +75,7 @@ final class MicCapture: ObservableObject {
         guard format.channelCount > 0, inputRate > 0 else {
             throw CaptureError.noInputDevice
         }
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+        let tapBlock: AVAudioNodeTapBlock = { [weak self] buffer, _ in
             guard let self, let channel = buffer.floatChannelData?[0] else { return }
             let mono = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
             let level = LevelMeter.level(of: mono)
@@ -94,8 +95,26 @@ final class MicCapture: ObservableObject {
             }
             Task { @MainActor in self.level = level }
         }
-        engine.prepare()
-        try engine.start()
+
+        // installTap and start raise Objective-C exceptions (not errors) when
+        // the input device is in a bad state — a format mismatch after a device
+        // switch, a disconnect, or a zero-channel format that slips past the
+        // guard above. Uncaught, they abort the whole app. Contain them so a mic
+        // hiccup fails this one dictation instead.
+        var startError: Error?
+        var raised: NSError?
+        let ran = WFRunCatchingExceptions({
+            input.installTap(onBus: 0, bufferSize: 2048, format: format, block: tapBlock)
+            self.engine.prepare()
+            do { try self.engine.start() } catch { startError = error }
+        }, &raised)
+
+        if !ran || startError != nil {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            if let startError { throw startError }
+            throw CaptureError.engineFailed(raised?.localizedDescription)
+        }
     }
 
     /// Stop and return the accumulated 16 kHz mono samples.
@@ -136,6 +155,7 @@ final class MicCapture: ObservableObject {
 enum CaptureError: LocalizedError {
     case noInputDevice
     case coreAudio(OSStatus)
+    case engineFailed(String?)
 
     var errorDescription: String? {
         switch self {
@@ -143,6 +163,9 @@ enum CaptureError: LocalizedError {
             return "No microphone is available. Check the input device in Settings."
         case .coreAudio(let status):
             return "The microphone could not be opened (Core Audio error \(status))."
+        case .engineFailed(let detail):
+            let base = "The microphone could not be opened. Try again, or pick a different input in Settings."
+            return detail.map { "\(base) (\($0))" } ?? base
         }
     }
 }
