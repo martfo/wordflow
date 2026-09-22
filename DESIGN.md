@@ -29,7 +29,10 @@ order.
 
 - macOS 14.4 or later, Apple Silicon only.
 - App: Swift 5 language mode (built with the Swift 6.x toolchain), SwiftUI. Menu bar app via
-  `MenuBarExtra`; the pill is a non-activating `NSPanel`. Tests in Swift Testing.
+  `MenuBarExtra`; the pill is a non-activating `NSPanel`. Tests in Swift Testing. As an
+  accessory (`LSUIElement`) app, `openSettings()` does not bring the app forward, so opening
+  Settings activates the app (`NSApp.activate`) and orders the settings window front — without
+  it the window opens behind whatever is frontmost and looks like nothing happened.
 - Backend: Python 3.11. FastAPI, uvicorn, pydantic v2. Tests in pytest, with markers that
   separate the fast gate from the slow `pipeline` tier and the always-skipped `manual` tier.
 - Speech-to-text: Parakeet TDT 0.6B v2 via `parakeet-mlx` (primary); Whisper large-v3-turbo
@@ -176,8 +179,17 @@ tick; the clock is injected so the whole machine is tested without hardware. Sta
 
 - `AVAudioEngine` input tap → linear-interpolation resample to **16 kHz mono** float → append
   to a running buffer. Ported from Polenta's `CaptureController`/`AudioMixer`/`LevelMeter`,
-  reduced to a single microphone channel (no system-audio tap). No always-on microphone: the
-  engine is started per dictation and torn down on stop.
+  reduced to a single microphone channel (no system-audio tap). No always-on microphone: a
+  **fresh engine is built for each dictation** and torn down on stop. Reusing one engine for
+  the app's lifetime wedges it — the default input device or its sample rate can change while
+  the app sits idle (a Bluetooth headset connects, the Mac sleeps and wakes), and an engine
+  still bound to the old device throws from `installTap`; a new engine always matches the
+  current hardware. `MicMeter` (the Settings level meter) does the same.
+- `installTap`/`start` raise **Objective-C exceptions** (not Swift errors) when the input is in
+  a bad state, and an uncaught one aborts the whole app. They are wrapped in a small ObjC
+  `@try/@catch` shim (`WordFlowObjCSupport`) that surfaces a raised exception as a Swift error,
+  so a mic hiccup fails a single dictation — the pill flashes `starting`, then a notice —
+  rather than crashing.
 - The pill's `listening` state is driven by the *first real audio buffer*, not by key-down, so
   the first word is never clipped (AC-1.6), worst case a Bluetooth mic's start-up delay. The
   buffer is complete from that first callback onwards.
