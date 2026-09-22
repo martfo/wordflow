@@ -12,11 +12,15 @@ import WordFlowObjCSupport
 final class MicMeter: ObservableObject {
     @Published var level: Float = 0
 
-    nonisolated(unsafe) private let engine = AVAudioEngine()
+    nonisolated(unsafe) private var engine = AVAudioEngine()
     private var running = false
 
     func start(deviceID: AudioDeviceID?) {
         guard !running, MicCapture.microphonePermission() == .granted else { return }
+        // Fresh engine each time, so a default-device or sample-rate change while
+        // the app was idle can't wedge the meter (see MicCapture.performStart).
+        engine.stop()
+        engine = AVAudioEngine()
         if let deviceID, let unit = engine.inputNode.audioUnit {
             var id = deviceID
             AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,

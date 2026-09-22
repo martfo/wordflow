@@ -22,7 +22,7 @@ final class MicCapture: ObservableObject {
     @Published private(set) var isCapturing = false
     @Published private(set) var isFlowing = false   // true once samples arrive
 
-    nonisolated(unsafe) private let engine = AVAudioEngine()
+    nonisolated(unsafe) private var engine = AVAudioEngine()
     nonisolated(unsafe) private var samples: [Float] = []
     private let accumulationQueue = DispatchQueue(label: "capture.accumulate")
     private let ioQueue = DispatchQueue(label: "capture.io")
@@ -61,6 +61,14 @@ final class MicCapture: ObservableObject {
     }
 
     nonisolated private func performStart(deviceID: AudioDeviceID?) throws {
+        // Use a fresh engine for each dictation. The default input device — or
+        // its sample rate — can change while the app sits idle (a Bluetooth
+        // headset connects, the Mac sleeps and wakes), and a long-lived
+        // AVAudioEngine still bound to the old device throws from installTap. A
+        // new engine always reflects the current hardware.
+        engine.stop()
+        engine = AVAudioEngine()
+
         accumulationQueue.sync {
             samples = []
             sawFirstBuffer = false
