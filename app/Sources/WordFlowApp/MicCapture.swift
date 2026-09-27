@@ -24,6 +24,9 @@ final class MicCapture: ObservableObject {
 
     nonisolated(unsafe) private var engine = AVAudioEngine()
     nonisolated(unsafe) private var samples: [Float] = []
+    // The system default input to restore after temporarily routing a chosen
+    // device (e.g. AirPods) as the input for a dictation.
+    nonisolated(unsafe) private var restoreInputDevice: AudioDeviceID?
     private let accumulationQueue = DispatchQueue(label: "capture.accumulate")
     private let ioQueue = DispatchQueue(label: "capture.io")
 
@@ -61,22 +64,32 @@ final class MicCapture: ObservableObject {
     }
 
     nonisolated private func performStart(deviceID: AudioDeviceID?) throws {
-        // Use a fresh engine for each dictation. The default input device — or
-        // its sample rate — can change while the app sits idle (a Bluetooth
-        // headset connects, the Mac sleeps and wakes), and a long-lived
-        // AVAudioEngine still bound to the old device throws from installTap. A
-        // new engine always reflects the current hardware.
-        engine.stop()
-        engine = AVAudioEngine()
-
         accumulationQueue.sync {
             samples = []
             sawFirstBuffer = false
             sawSpeech = false
         }
-        if let deviceID {
-            try selectInput(device: deviceID)
+
+        // Route the chosen device as the system default input for this dictation
+        // (restored on stop). Capturing from the system default is the path that
+        // actually delivers audio; overriding the input AudioUnit's device
+        // returns silence for a Bluetooth mic such as AirPods. This is also what
+        // forces AirPods into microphone (HFP) mode. Only change it when the pick
+        // differs from the current default, so the common case makes no system
+        // change at all.
+        restoreInputDevice = nil
+        if let deviceID, let current = Self.defaultInputDevice(), current != deviceID,
+           Self.setDefaultInputDevice(deviceID) {
+            restoreInputDevice = current
         }
+
+        // A fresh engine each dictation, built after the input switch so its
+        // input node binds to the chosen device: the default device or its
+        // sample rate can change while the app is idle, and a long-lived engine
+        // bound to the old device throws from installTap.
+        engine.stop()
+        engine = AVAudioEngine()
+
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         let inputRate = format.sampleRate
@@ -120,6 +133,7 @@ final class MicCapture: ObservableObject {
         if !ran || startError != nil {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
+            restoreDefaultInput()
             if let startError { throw startError }
             throw CaptureError.engineFailed(raised?.localizedDescription)
         }
@@ -147,16 +161,40 @@ final class MicCapture: ObservableObject {
         Thread.sleep(forTimeInterval: micTailPadSeconds)
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        restoreDefaultInput()
         return accumulationQueue.sync { samples }
     }
 
-    nonisolated private func selectInput(device: AudioDeviceID) throws {
-        guard let unit = engine.inputNode.audioUnit else { return }
-        var deviceID = device
-        let status = AudioUnitSetProperty(
-            unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global,
-            0, &deviceID, UInt32(MemoryLayout<AudioDeviceID>.size))
-        guard status == noErr else { throw CaptureError.coreAudio(status) }
+    /// Restore the system default input saved when this dictation rerouted it.
+    nonisolated private func restoreDefaultInput() {
+        if let restore = restoreInputDevice {
+            _ = Self.setDefaultInputDevice(restore)
+            restoreInputDevice = nil
+        }
+    }
+
+    nonisolated private static func defaultInputDevice() -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id)
+        return status == noErr ? id : nil
+    }
+
+    @discardableResult
+    nonisolated private static func setDefaultInputDevice(_ id: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var device = id
+        return AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil,
+            UInt32(MemoryLayout<AudioDeviceID>.size), &device) == noErr
     }
 }
 
