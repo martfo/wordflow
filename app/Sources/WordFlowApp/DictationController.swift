@@ -43,6 +43,8 @@ final class DictationController: ObservableObject {
     private var secureInputTimer: Timer?
     private var messageClear: DispatchWorkItem?
     private var noticeHide: DispatchWorkItem?
+    private var micReadyTimeout: DispatchWorkItem?
+    private let micReadyTimeoutSeconds: TimeInterval = 3
     private var lastInsertNotice: String?
     private var accessibilityPoll: Timer?
     private var hotkey: HotkeyKind = .rightControl
@@ -215,6 +217,7 @@ final class DictationController: ObservableObject {
             }
             do {
                 try await capture.start(deviceID: microphones.captureDeviceID)
+                scheduleMicReadyTimeout()
             } catch {
                 pill = .hidden
                 flash("The microphone could not start: \(error.localizedDescription)")
@@ -224,10 +227,34 @@ final class DictationController: ObservableObject {
     }
 
     private func onSamplesFlowing() {
+        micReadyTimeout?.cancel()
         if pill == .starting { pill = .listening }
     }
 
+    /// If no audio arrives soon after "getting mic ready", the input device is
+    /// dead or wrong (a silent webcam, a Bluetooth mic that never engaged, a
+    /// default that flipped). Rather than hang on the starting pill, drop it and
+    /// point at the two fixes: pick another mic, or Restart WordFlow.
+    private func scheduleMicReadyTimeout() {
+        micReadyTimeout?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.pill == .starting, self.capture.isCapturing else { return }
+            let name = self.microphones.selection.uid == InputDevice.systemDefaultUID
+                ? "the system-default microphone"
+                : "“\(self.microphones.selection.name)”"
+            Task {
+                await self.capture.cancel()
+                self.pill = .hidden
+                self.flash("No audio from \(name). Pick another mic from the Microphone menu, or use Restart WordFlow.")
+                self.stateMachine.handle(.escape)
+            }
+        }
+        micReadyTimeout = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + micReadyTimeoutSeconds, execute: work)
+    }
+
     private func finishAndTranscribe() {
+        micReadyTimeout?.cancel()
         wasLockedAtStop = stateMachine.isLocked
         let target = inserter.frontmostTarget()
         let sequence = insertionQueue.submit()
@@ -263,6 +290,7 @@ final class DictationController: ObservableObject {
     }
 
     private func discard() {
+        micReadyTimeout?.cancel()
         // A sub-500 ms tap with no speech: discard silently, no notice (AC-1.2-a).
         Task {
             await capture.cancel()
@@ -272,6 +300,7 @@ final class DictationController: ObservableObject {
 
     private func cancel() {
         pendingTapTick?.cancel()
+        micReadyTimeout?.cancel()
         Task {
             await capture.cancel()
             pill = inFlight > 0 ? .processing : .hidden
