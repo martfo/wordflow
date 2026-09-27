@@ -57,8 +57,22 @@ struct MenuContent: View {
         Button("Settings…") { showSettings(.general) }
         Button("History…") { showSettings(.dictationData) }
         Divider()
+        Button("Restart WordFlow") { restartApp() }
         Button("Quit WordFlow") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
+    }
+
+    /// Relaunch the app to recover from a wedged capture/audio state (or a stale
+    /// input device) without hunting for the bundle in Finder. Spawn a detached
+    /// shell that reopens the app once this instance has fully exited, then quit.
+    private func restartApp() {
+        let path = Bundle.main.bundlePath
+        let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 0.5; /usr/bin/open \(quoted)"]
+        try? task.run()
+        NSApplication.shared.terminate(nil)
     }
 
     /// Open Settings on a given tab. `openSettings` alone does not bring a
