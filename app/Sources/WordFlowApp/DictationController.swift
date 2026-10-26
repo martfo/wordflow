@@ -239,6 +239,7 @@ final class DictationController: ObservableObject {
         micReadyTimeout?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.pill == .starting, self.capture.isCapturing else { return }
+            wfLog("mic-ready timeout: no audio after \(self.micReadyTimeoutSeconds)s")
             let name = self.microphones.selection.uid == InputDevice.systemDefaultUID
                 ? "the system-default microphone"
                 : "“\(self.microphones.selection.name)”"

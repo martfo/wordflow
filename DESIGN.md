@@ -177,19 +177,28 @@ tick; the clock is injected so the whole machine is tested without hardware. Sta
 
 ## Audio capture
 
-- `AVAudioEngine` input tap → linear-interpolation resample to **16 kHz mono** float → append
-  to a running buffer. Ported from Polenta's `CaptureController`/`AudioMixer`/`LevelMeter`,
-  reduced to a single microphone channel (no system-audio tap). No always-on microphone: a
-  **fresh engine is built for each dictation** and torn down on stop. Reusing one engine for
-  the app's lifetime wedges it — the default input device or its sample rate can change while
-  the app sits idle (a Bluetooth headset connects, the Mac sleeps and wakes), and an engine
-  still bound to the old device throws from `installTap`; a new engine always matches the
-  current hardware. `MicMeter` (the Settings level meter) does the same.
-- `installTap`/`start` raise **Objective-C exceptions** (not Swift errors) when the input is in
-  a bad state, and an uncaught one aborts the whole app. They are wrapped in a small ObjC
-  `@try/@catch` shim (`WordFlowObjCSupport`) that surfaces a raised exception as a Swift error,
-  so a mic hiccup fails a single dictation — the pill flashes `starting`, then a notice —
-  rather than crashing.
+- An `AVCaptureSession` with an audio data output asked for **16 kHz mono float** directly →
+  append to a running buffer. A single-microphone reduction of Polenta's
+  `CaptureController`/`AudioMixer`/`LevelMeter` (no system-audio tap). No always-on
+  microphone: a session is built for each dictation and torn down on stop. The device is
+  opened by its Core Audio UID (falling back to the system default input), so a pinned mic
+  is used without touching the system's input setting.
+- **Why not `AVAudioEngine`**: the engine is full duplex, and a Bluetooth headset (AirPods)
+  renegotiates both input and output when its mic engages — about a second after capture
+  starts. That fires a configuration change that stops the engine, leaves its input node
+  reporting a stale format (so a new tap fails with a format mismatch), and repeats as the
+  output side switches too; the dictation never receives audio. A capture session is
+  input-only and rides through the switch, delivering audio within ~50 ms. (Overriding the
+  engine input's device via `kAudioOutputUnitProperty_CurrentDevice` was worse still: silence.)
+  The Settings level meter (`MicMeter`) still uses a short-lived engine, which is fine for a
+  meter.
+- Session configuration can raise **Objective-C exceptions** on a device in a bad state, and an
+  uncaught one aborts the whole app. It runs inside a small ObjC `@try/@catch` shim
+  (`WordFlowObjCSupport`) that surfaces a raised exception as a Swift error, so a mic hiccup
+  fails a single dictation rather than crashing.
+- If no audio arrives within 3 s of `starting`, the controller drops the pill and says which
+  mic gave nothing ("pick another mic, or Restart WordFlow"). Capture start, first buffer,
+  runtime errors and stop are logged to `logs/hotkey.log` in the data folder for diagnosis.
 - The pill's `listening` state is driven by the *first real audio buffer*, not by key-down, so
   the first word is never clipped (AC-1.6), worst case a Bluetooth mic's start-up delay. The
   buffer is complete from that first callback onwards.

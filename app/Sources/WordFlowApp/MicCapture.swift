@@ -1,12 +1,19 @@
-// Drives one dictation's microphone capture: AVAudioEngine input tap, resampled
-// to 16 kHz mono and accumulated as floats. A single-channel reduction of
-// Polenta's CaptureController, with no system-audio tap. The mic is opened per
-// dictation and torn down on stop, never kept always-on. The first real buffer
-// flips the pill from stream-starting to listening, so the first word is never
-// clipped (AC-1.6).
+// Drives one dictation's microphone capture: an AVCaptureSession audio data
+// output delivering 16 kHz mono float, accumulated as samples. A single-channel
+// reduction of Polenta's CaptureController, with no system-audio tap. The mic is
+// opened per dictation and torn down on stop, never kept always-on. The first
+// real buffer flips the pill from stream-starting to listening, so the first
+// word is never clipped (AC-1.6).
+//
+// AVCaptureSession rather than AVAudioEngine: the engine is full duplex, and a
+// Bluetooth headset (AirPods) renegotiates both its input and output when the
+// mic engages, which stops the engine mid-start and starves it of audio. A
+// capture session is input-only, opens the exact device by its UID, and rides
+// through the headset's switch into microphone mode on its own.
 
 import AVFoundation
 import CoreAudio
+import CoreMedia
 import Foundation
 import WordFlowCore
 import WordFlowObjCSupport
@@ -22,19 +29,23 @@ final class MicCapture: ObservableObject {
     @Published private(set) var isCapturing = false
     @Published private(set) var isFlowing = false   // true once samples arrive
 
-    nonisolated(unsafe) private var engine = AVAudioEngine()
+    nonisolated(unsafe) private var session: AVCaptureSession?
+    nonisolated(unsafe) private var runtimeErrorObserver: NSObjectProtocol?
     nonisolated(unsafe) private var samples: [Float] = []
-    // The system default input to restore after temporarily routing a chosen
-    // device (e.g. AirPods) as the input for a dictation.
-    nonisolated(unsafe) private var restoreInputDevice: AudioDeviceID?
     private let accumulationQueue = DispatchQueue(label: "capture.accumulate")
     private let ioQueue = DispatchQueue(label: "capture.io")
+    private let sampleQueue = DispatchQueue(label: "capture.samples")
+    nonisolated(unsafe) private let receiver = SampleReceiver()
 
     // Set by the controller before start.
     nonisolated(unsafe) var onFirstBuffer: (() -> Void)?
     nonisolated(unsafe) var onSpeech: (() -> Void)?
     nonisolated(unsafe) private var sawFirstBuffer = false
     nonisolated(unsafe) private var sawSpeech = false
+
+    init() {
+        receiver.onSamples = { [weak self] mono, rate in self?.consume(mono, rate: rate) }
+    }
 
     static func requestMicrophoneAccess() async -> Bool {
         await AVCaptureDevice.requestAccess(for: .audio)
@@ -69,74 +80,83 @@ final class MicCapture: ObservableObject {
             sawFirstBuffer = false
             sawSpeech = false
         }
+        tearDownSession()
 
-        // Route the chosen device as the system default input for this dictation
-        // (restored on stop). Capturing from the system default is the path that
-        // actually delivers audio; overriding the input AudioUnit's device
-        // returns silence for a Bluetooth mic such as AirPods. This is also what
-        // forces AirPods into microphone (HFP) mode. Only change it when the pick
-        // differs from the current default, so the common case makes no system
-        // change at all.
-        restoreInputDevice = nil
-        if let deviceID, let current = Self.defaultInputDevice(), current != deviceID,
-           Self.setDefaultInputDevice(deviceID) {
-            restoreInputDevice = current
-        }
-
-        // A fresh engine each dictation, built after the input switch so its
-        // input node binds to the chosen device: the default device or its
-        // sample rate can change while the app is idle, and a long-lived engine
-        // bound to the old device throws from installTap.
-        engine.stop()
-        engine = AVAudioEngine()
-
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        let inputRate = format.sampleRate
-        guard format.channelCount > 0, inputRate > 0 else {
+        guard let device = Self.captureDevice(for: deviceID) else {
+            wfLog("capture start: no capture device (pinned=\(deviceID.map { "\($0)" } ?? "system-default"))")
             throw CaptureError.noInputDevice
         }
-        let tapBlock: AVAudioNodeTapBlock = { [weak self] buffer, _ in
-            guard let self, let channel = buffer.floatChannelData?[0] else { return }
-            let mono = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
-            let level = LevelMeter.level(of: mono)
-            let resampled = AudioWAV.resample(mono, from: inputRate)
-            self.accumulationQueue.async {
-                self.samples.append(contentsOf: resampled)
-                if !self.sawFirstBuffer {
-                    self.sawFirstBuffer = true
-                    let cb = self.onFirstBuffer
-                    Task { @MainActor in self.isFlowing = true; cb?() }
-                }
-                if !self.sawSpeech, LevelMeter.containsSpeech(mono) {
-                    self.sawSpeech = true
-                    let cb = self.onSpeech
-                    Task { @MainActor in cb?() }
-                }
-            }
-            Task { @MainActor in self.level = level }
-        }
 
-        // installTap and start raise Objective-C exceptions (not errors) when
-        // the input device is in a bad state — a format mismatch after a device
-        // switch, a disconnect, or a zero-channel format that slips past the
-        // guard above. Uncaught, they abort the whole app. Contain them so a mic
-        // hiccup fails this one dictation instead.
-        var startError: Error?
+        let session = AVCaptureSession()
+        let output = AVCaptureAudioDataOutput()
+        // Ask the session for exactly what the backend wants, so no resampling.
+        output.audioSettings = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: AudioWAV.targetSampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsNonInterleaved: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        output.setSampleBufferDelegate(receiver, queue: sampleQueue)
+
+        // Session configuration can raise Objective-C exceptions on a device in a
+        // bad state; uncaught they abort the app. Contain them so a mic hiccup
+        // fails this one dictation instead.
+        var configError: Error?
         var raised: NSError?
         let ran = WFRunCatchingExceptions({
-            input.installTap(onBus: 0, bufferSize: 2048, format: format, block: tapBlock)
-            self.engine.prepare()
-            do { try self.engine.start() } catch { startError = error }
+            do {
+                let input = try AVCaptureDeviceInput(device: device)
+                session.beginConfiguration()
+                if session.canAddInput(input) { session.addInput(input) } else { configError = CaptureError.noInputDevice }
+                if session.canAddOutput(output) { session.addOutput(output) } else { configError = CaptureError.noInputDevice }
+                session.commitConfiguration()
+                if configError == nil { session.startRunning() }
+            } catch {
+                configError = error
+            }
         }, &raised)
 
-        if !ran || startError != nil {
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-            restoreDefaultInput()
-            if let startError { throw startError }
+        guard ran, configError == nil, session.isRunning else {
+            session.stopRunning()
+            let detail = configError?.localizedDescription ?? raised?.localizedDescription ?? "the capture session did not start"
+            wfLog("capture start failed on \(device.localizedName): \(detail)")
+            if let configError { throw configError }
             throw CaptureError.engineFailed(raised?.localizedDescription)
         }
+
+        runtimeErrorObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil
+        ) { note in
+            let error = note.userInfo?[AVCaptureSessionErrorKey] as? Error
+            wfLog("capture runtime error: \(error?.localizedDescription ?? "unknown")")
+        }
+        self.session = session
+        wfLog("capture start: \(device.localizedName) [\(device.uniqueID)] running")
+    }
+
+    /// Runs on the sample queue for every delivered buffer.
+    nonisolated private func consume(_ mono: [Float], rate: Double) {
+        guard !mono.isEmpty else { return }
+        let level = LevelMeter.level(of: mono)
+        let resampled = AudioWAV.resample(mono, from: rate)   // no-op at 16 kHz
+        accumulationQueue.async {
+            self.samples.append(contentsOf: resampled)
+            if !self.sawFirstBuffer {
+                self.sawFirstBuffer = true
+                wfLog("capture first buffer: \(mono.count) frames at \(rate) Hz")
+                let cb = self.onFirstBuffer
+                Task { @MainActor in self.isFlowing = true; cb?() }
+            }
+            if !self.sawSpeech, LevelMeter.containsSpeech(mono) {
+                self.sawSpeech = true
+                let cb = self.onSpeech
+                Task { @MainActor in cb?() }
+            }
+        }
+        Task { @MainActor in self.level = level }
     }
 
     /// Stop and return the accumulated 16 kHz mono samples.
@@ -156,45 +176,68 @@ final class MicCapture: ObservableObject {
     }
 
     nonisolated private func performStop() -> [Float] {
-        // The engine and tap are still live during this pad, so the trailing
-        // audio keeps accumulating before we tear down.
+        // The session is still live during this pad, so the trailing audio keeps
+        // accumulating before we tear down.
         Thread.sleep(forTimeInterval: micTailPadSeconds)
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        restoreDefaultInput()
-        return accumulationQueue.sync { samples }
+        tearDownSession()
+        sampleQueue.sync {}   // let any in-flight buffer callback finish
+        let result = accumulationQueue.sync { samples }
+        let flowed = accumulationQueue.sync { sawFirstBuffer }
+        wfLog("capture stop: samples=\(result.count) sawAudio=\(flowed)")
+        return result
     }
 
-    /// Restore the system default input saved when this dictation rerouted it.
-    nonisolated private func restoreDefaultInput() {
-        if let restore = restoreInputDevice {
-            _ = Self.setDefaultInputDevice(restore)
-            restoreInputDevice = nil
+    nonisolated private func tearDownSession() {
+        if let runtimeErrorObserver {
+            NotificationCenter.default.removeObserver(runtimeErrorObserver)
+            self.runtimeErrorObserver = nil
         }
+        session?.stopRunning()
+        session = nil
     }
 
-    nonisolated private static func defaultInputDevice() -> AudioDeviceID? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain)
-        var id = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id)
-        return status == noErr ? id : nil
+    /// The capture device for a picked Core Audio device, falling back to the
+    /// system default input when nothing is pinned or the pinned device is gone.
+    nonisolated private static func captureDevice(for deviceID: AudioDeviceID?) -> AVCaptureDevice? {
+        if let deviceID, let uid = deviceUID(deviceID), let device = AVCaptureDevice(uniqueID: uid) {
+            return device
+        }
+        return AVCaptureDevice.default(for: .audio)
     }
 
-    @discardableResult
-    nonisolated private static func setDefaultInputDevice(_ id: AudioDeviceID) -> Bool {
+    nonisolated private static func deviceUID(_ deviceID: AudioDeviceID) -> String? {
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
+            mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
-        var device = id
-        return AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil,
-            UInt32(MemoryLayout<AudioDeviceID>.size), &device) == noErr
+        var value: CFString = "" as CFString
+        var size = UInt32(MemoryLayout<CFString>.size)
+        let status = withUnsafeMutablePointer(to: &value) {
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, $0)
+        }
+        return status == noErr ? (value as String) : nil
+    }
+}
+
+/// Receives audio sample buffers from the capture session and hands them on as
+/// mono floats with their sample rate.
+private final class SampleReceiver: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    var onSamples: (([Float], Double) -> Void)?
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        guard let description = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let format = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee
+        else { return }
+        var list = AudioBufferList()
+        var block: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer, bufferListSizeNeededOut: nil, bufferListOut: &list,
+            bufferListSize: MemoryLayout<AudioBufferList>.size, blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil, flags: 0, blockBufferOut: &block)
+        guard status == noErr, let data = list.mBuffers.mData else { return }
+        let count = Int(list.mBuffers.mDataByteSize) / MemoryLayout<Float>.size
+        let samples = Array(UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self), count: count))
+        onSamples?(samples, format.mSampleRate)
     }
 }
 
