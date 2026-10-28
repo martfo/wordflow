@@ -9,5 +9,5 @@ dist/
 build/
 *.dmg
 .uv-cache/
-# Recorded voice fixtures are the user's; they are generated locally and not committed.
-fixtures/audio/*.wav
+# Recorded voice fixtures are the user's own voice; any format, never committed.
+fixtures/audio/
