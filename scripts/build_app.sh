@@ -18,6 +18,10 @@ echo "==> assembling ${APP_DIR}"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN/WordFlowApp" "$APP_DIR/Contents/MacOS/WordFlowApp"
+# Strip the debug map: without this the binary embeds the absolute build paths
+# of every object file and source directory (the builder's home folder and
+# directory layout), which would ship in every public download.
+strip -S "$APP_DIR/Contents/MacOS/WordFlowApp"
 cp "$ROOT/app/Support/Info.plist" "$APP_DIR/Contents/Info.plist"
 if [ -f "$ROOT/app/Support/AppIcon.icns" ]; then
   cp "$ROOT/app/Support/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
